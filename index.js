@@ -1,5 +1,6 @@
 const fs = require('fs/promises');
 const core = require('@actions/core');
+const yaml = require('js-yaml');
 
 // Validate package names using a regex (for valid package name characters)
 function isValidPackageName(packageName) {
@@ -17,7 +18,7 @@ function processPackageLine(line) {
     return stripVersion(cleanLine);
 }
 
-// Fetch package information from Score API
+// Fetch package information from the Score API
 async function fetchPackageScore(packageName) {
     const url = `https://openteams-score.vercel.app/api/package/pypi/${packageName}`;
     try {
@@ -41,25 +42,40 @@ async function annotatePackage(packageName, filePath, lineNumber) {
             const healthRiskValue = health_risk ? health_risk.value : 'Unknown';
 
             let recommendation = '';
+            let logFunction = core.notice; // Default log level is notice
 
+            // Determine log level and recommendation based on maturity and health risk
             if (maturityValue === 'Mature' && healthRiskValue === 'Healthy') {
                 recommendation = 'This package is likely to enhance stability and maintainability with minimal risks.';
+                logFunction = core.notice; // Healthy package, log as notice
             } else if (maturityValue === 'Mature' && healthRiskValue === 'Moderate Risk') {
                 recommendation = 'The package is stable but may introduce some moderate risks.';
+                logFunction = core.warning; // Moderate risk, log as warning
             } else if (maturityValue === 'Mature' && healthRiskValue === 'High Risk') {
                 recommendation = 'The package is stable but introduces high risks.';
+                logFunction = core.error; // High risk, log as error
             } else if (maturityValue === 'Developing' && healthRiskValue === 'Healthy') {
                 recommendation = 'The package is in development but poses low risks.';
+                logFunction = core.notice; // Developing but healthy, log as notice
             } else if (maturityValue === 'Experimental' || healthRiskValue === 'High Risk') {
                 recommendation = 'This package may pose significant risks to stability and maintainability.';
+                logFunction = core.error; // Experimental or high risk, log as error
             } else if (maturityValue === 'Legacy') {
                 recommendation = 'This package is legacy and may not be stable, consider alternatives.';
+                logFunction = core.warning; // Legacy package, log as warning
+            } else if (
+                ['Not Found', 'Unknown', 'Placeholder'].includes(maturityValue) || 
+                ['Not Found', 'Unknown', 'Placeholder', 'Healthy'].includes(healthRiskValue)
+            ) {
+                recommendation = 'Insufficient data to make an informed recommendation.';
+                logFunction = core.notice; // Uncertain data or healthy, log as notice
             } else {
                 recommendation = 'Insufficient data to make an informed recommendation.';
+                logFunction = core.warning; // General warning for unspecified cases
             }
 
             // Add annotation to the specific file and line number
-            core.notice(`Package ${packageName}: (Maturity: ${maturityValue}, Health: ${healthRiskValue}). ${recommendation}`, {
+            logFunction(`Package ${packageName}: (Maturity: ${maturityValue}, Health: ${healthRiskValue}). ${recommendation}`, {
                 file: filePath,
                 startLine: lineNumber,
                 endLine: lineNumber
@@ -80,15 +96,8 @@ async function annotatePackage(packageName, filePath, lineNumber) {
     }
 }
 
-async function run() {
-    const filePath = 'requirements.txt';
-    const ecosystem = core.getInput('package-ecosystem', { required: true });
-
-    if (ecosystem !== 'pip') {
-        core.setFailed(`Unsupported package ecosystem: ${ecosystem}`);
-        return;
-    }
-
+// Process a pip requirements.txt file
+async function processPipRequirements(filePath) {
     try {
         const packages = (await fs.readFile(filePath, 'utf-8')).split('\n').filter(pkg => pkg);
 
@@ -110,6 +119,74 @@ async function run() {
         });
     } catch (error) {
         core.setFailed(`Failed to read ${filePath}: ${error.message}`);
+    }
+}
+
+// Process a conda environment.yml file
+async function processCondaEnvironment(filePath) {
+    try {
+        // Read and parse the YAML content
+        const fileContent = await fs.readFile(filePath, 'utf-8');
+        const environment = yaml.load(fileContent); // Parse YAML
+
+        if (environment && environment.dependencies) {
+            let lineNumber = 1; // Track line number in the file
+
+            // Process conda dependencies
+            environment.dependencies.forEach(dep => {
+                if (typeof dep === 'string') {
+                    // Conda package (not pip)
+                    const packageName = processPackageLine(dep);
+                    if (packageName) {
+                        if (!isValidPackageName(packageName)) {
+                            core.error(`Invalid package name: ${packageName}`, {
+                                file: filePath,
+                                startLine: lineNumber,
+                                endLine: lineNumber
+                            });
+                        } else {
+                            annotatePackage(packageName, filePath, lineNumber);
+                        }
+                    }
+                    lineNumber++;
+                } else if (typeof dep === 'object' && dep.pip) {
+                    // Pip dependencies listed under "pip" in environment.yml
+                    dep.pip.forEach((pipPackage, pipIndex) => {
+                        const packageName = processPackageLine(pipPackage);
+                        const pipLineNumber = lineNumber + pipIndex;
+                        if (packageName) {
+                            if (!isValidPackageName(packageName)) {
+                                core.error(`Invalid pip package name: ${packageName}`, {
+                                    file: filePath,
+                                    startLine: pipLineNumber,
+                                    endLine: pipLineNumber
+                                });
+                            } else {
+                                annotatePackage(packageName, filePath, pipLineNumber);
+                            }
+                        }
+                    });
+                    lineNumber += dep.pip.length;
+                }
+            });
+        } else {
+            core.setFailed(`No dependencies found in ${filePath}`);
+        }
+    } catch (error) {
+        core.setFailed(`Failed to read ${filePath}: ${error.message}`);
+    }
+}
+
+// Main entry point for the GitHub Action
+async function run() {
+    const ecosystem = core.getInput('package-ecosystem', { required: true });
+
+    if (ecosystem === 'pip') {
+        await processPipRequirements('requirements.txt');
+    } else if (ecosystem === 'conda') {
+        await processCondaEnvironment('environment.yml');
+    } else {
+        core.setFailed(`Unsupported package ecosystem: ${ecosystem}`);
     }
 }
 

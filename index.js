@@ -81,7 +81,8 @@ async function annotatePackage(packageName, filePath, lineNumber) {
                 endLine: lineNumber
             });
         } else {
-            core.error(`Package ${packageName} not found.`, {
+            // When the package is not found, use core.notice
+            core.notice(`Package ${packageName} not found.`, {
                 file: filePath,
                 startLine: lineNumber,
                 endLine: lineNumber

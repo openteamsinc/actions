@@ -1,5 +1,6 @@
 const fs = require('fs/promises');
 const core = require('@actions/core');
+const yaml = require('js-yaml');
 
 // Validate package names using a regex (for valid package name characters)
 function isValidPackageName(packageName) {
@@ -17,7 +18,7 @@ function processPackageLine(line) {
     return stripVersion(cleanLine);
 }
 
-// Fetch package information from Score API
+// Fetch package information from the Score API
 async function fetchPackageScore(packageName) {
     const url = `https://openteams-score.vercel.app/api/package/pypi/${packageName}`;
     try {
@@ -80,36 +81,65 @@ async function annotatePackage(packageName, filePath, lineNumber) {
     }
 }
 
-async function run() {
-    const filePath = 'requirements.txt';
-    const ecosystem = core.getInput('package-ecosystem', { required: true });
+async function processLines(filePath, lines) {
+    for (let index = 1; index <= lines.length; index++) {
+        const line = lines[index - 1]; // Keep lines including empty ones
 
-    if (ecosystem !== 'pip') {
-        core.setFailed(`Unsupported package ecosystem: ${ecosystem}`);
-        return;
-    }
+        if (!line.trim()) {
+            // Skip processing empty lines, but continue incrementing line count
+            continue;
+        }
 
-    try {
-        const packages = (await fs.readFile(filePath, 'utf-8')).split('\n').filter(pkg => pkg);
-
-        packages.forEach((packageLine, index) => {
-            const packageName = processPackageLine(packageLine);
-            const lineNumber = index + 1;
-
-            if (packageName) {
-                if (!isValidPackageName(packageName)) {
-                    core.error(`Invalid package name: ${packageName}`, {
-                        file: filePath,
-                        startLine: lineNumber,
-                        endLine: lineNumber
-                    });
-                    return;
-                }
-                annotatePackage(packageName, filePath, lineNumber);
+        const packageName = processPackageLine(line);
+        if (packageName) {
+            if (!isValidPackageName(packageName)) {
+                core.error(`Invalid package name: ${packageName}`, {
+                    file: filePath,
+                    startLine: index,
+                    endLine: index
+                });
+            } else {
+                await annotatePackage(packageName, filePath, index);
             }
-        });
+        }
+    }
+}
+
+async function processPipRequirements(filePath) {
+    try {
+        const lines = (await fs.readFile(filePath, 'utf-8')).split('\n');
+        await processLines(filePath, lines);
     } catch (error) {
         core.setFailed(`Failed to read ${filePath}: ${error.message}`);
+    }
+}
+
+async function processCondaEnvironment(filePath) {
+    try {
+        const fileContent = await fs.readFile(filePath, 'utf-8');
+        const environment = yaml.load(fileContent);
+
+        if (environment?.dependencies) {
+            const lines = fileContent.split('\n');
+            await processLines(filePath, lines);
+        } else {
+            core.setFailed(`No dependencies found in ${filePath}`);
+        }
+    } catch (error) {
+        core.setFailed(`Failed to read ${filePath}: ${error.message}`);
+    }
+}
+
+// Main entry point for the GitHub Action
+async function run() {
+    const ecosystem = core.getInput('package-ecosystem', { required: true });
+
+    if (ecosystem === 'pip') {
+        await processPipRequirements('requirements.txt');
+    } else if (ecosystem === 'conda') {
+        await processCondaEnvironment('environment.yml');
+    } else {
+        core.setFailed(`Unsupported package ecosystem: ${ecosystem}`);
     }
 }
 

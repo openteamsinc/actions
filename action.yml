@@ -7,7 +7,7 @@ inputs:
   package-ecosystem:
     description: "The package manager ecosystem to annotate. Currently supports 'pip'."
     required: true
-  annotate-diff-only:
+  annotate-modified-only:
     description: "Set to true to annotate only modified lines in a PR."
     required: false
     default: "false"

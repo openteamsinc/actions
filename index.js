@@ -117,11 +117,31 @@ async function processPipRequirements(filePath) {
 async function processCondaEnvironment(filePath) {
     try {
         const fileContent = await fs.readFile(filePath, 'utf-8');
-        const environment = yaml.load(fileContent);
+        const environment = yaml.load(fileContent); // Load the YAML content
 
         if (environment?.dependencies) {
-            const lines = fileContent.split('\n');
-            await processLines(filePath, lines);
+            let lineNumber = 1; // Start line number tracking
+
+            // Loop over each dependency in the "dependencies" section
+            for (const dependency of environment.dependencies) {
+                if (typeof dependency === 'string') {
+                    // It's a conda package, process it
+                    const packageName = stripVersion(dependency); // Strip version and build info
+                    if (packageName && isValidPackageName(packageName)) {
+                        await annotatePackage(packageName, filePath, lineNumber);
+                    }
+                    lineNumber++;
+                } else if (typeof dependency === 'object' && dependency.pip) {
+                    // Process nested pip dependencies
+                    for (const pipPackage of dependency.pip) {
+                        const pipPackageName = stripVersion(pipPackage);
+                        if (pipPackageName && isValidPackageName(pipPackageName)) {
+                            await annotatePackage(pipPackageName, filePath, lineNumber);
+                        }
+                        lineNumber++;
+                    }
+                }
+            }
         } else {
             core.setFailed(`No dependencies found in ${filePath}`);
         }

@@ -5,7 +5,7 @@ runs:
   main: "dist/index.js"
 inputs:
   package-ecosystem:
-    description: "The package manager ecosystem to annotate. Currently supports 'pip'."
+    description: "The package manager ecosystem to annotate. Currently supports 'pip' and 'conda'."
     required: true
   # requirements-path:
   #   description: "Path to the requirements.txt file to annotate."

@@ -1,6 +1,5 @@
 const fs = require('fs/promises');
 const core = require('@actions/core');
-const yaml = require('js-yaml');
 
 // Validate package names using a regex (for valid package name characters)
 function isValidPackageName(packageName) {
@@ -97,8 +96,16 @@ async function annotatePackage(packageName, filePath, lineNumber) {
     }
 }
 
-// Process a pip requirements.txt file
-async function processPipRequirements(filePath) {
+// Main function to process the requirements.txt file for pip packages
+async function run() {
+    const filePath = 'requirements.txt';
+    const ecosystem = core.getInput('package-ecosystem', { required: true });
+
+    if (ecosystem !== 'pip') {
+        core.setFailed(`Unsupported package ecosystem: ${ecosystem}`);
+        return;
+    }
+
     try {
         const packages = (await fs.readFile(filePath, 'utf-8')).split('\n').filter(pkg => pkg);
 
@@ -120,74 +127,6 @@ async function processPipRequirements(filePath) {
         });
     } catch (error) {
         core.setFailed(`Failed to read ${filePath}: ${error.message}`);
-    }
-}
-
-// Process a conda environment.yml file
-async function processCondaEnvironment(filePath) {
-    try {
-        // Read and parse the YAML content
-        const fileContent = await fs.readFile(filePath, 'utf-8');
-        const environment = yaml.load(fileContent); // Parse YAML
-
-        if (environment && environment.dependencies) {
-            let lineNumber = 1; // Track line number in the file
-
-            // Process conda dependencies
-            environment.dependencies.forEach(dep => {
-                if (typeof dep === 'string') {
-                    // Conda package (not pip)
-                    const packageName = processPackageLine(dep);
-                    if (packageName) {
-                        if (!isValidPackageName(packageName)) {
-                            core.error(`Invalid package name: ${packageName}`, {
-                                file: filePath,
-                                startLine: lineNumber,
-                                endLine: lineNumber
-                            });
-                        } else {
-                            annotatePackage(packageName, filePath, lineNumber);
-                        }
-                    }
-                    lineNumber++;
-                } else if (typeof dep === 'object' && dep.pip) {
-                    // Pip dependencies listed under "pip" in environment.yml
-                    dep.pip.forEach((pipPackage, pipIndex) => {
-                        const packageName = processPackageLine(pipPackage);
-                        const pipLineNumber = lineNumber + pipIndex;
-                        if (packageName) {
-                            if (!isValidPackageName(packageName)) {
-                                core.error(`Invalid pip package name: ${packageName}`, {
-                                    file: filePath,
-                                    startLine: pipLineNumber,
-                                    endLine: pipLineNumber
-                                });
-                            } else {
-                                annotatePackage(packageName, filePath, pipLineNumber);
-                            }
-                        }
-                    });
-                    lineNumber += dep.pip.length;
-                }
-            });
-        } else {
-            core.setFailed(`No dependencies found in ${filePath}`);
-        }
-    } catch (error) {
-        core.setFailed(`Failed to read ${filePath}: ${error.message}`);
-    }
-}
-
-// Main entry point for the GitHub Action
-async function run() {
-    const ecosystem = core.getInput('package-ecosystem', { required: true });
-
-    if (ecosystem === 'pip') {
-        await processPipRequirements('requirements.txt');
-    } else if (ecosystem === 'conda') {
-        await processCondaEnvironment('environment.yml');
-    } else {
-        core.setFailed(`Unsupported package ecosystem: ${ecosystem}`);
     }
 }
 

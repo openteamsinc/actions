@@ -1,6 +1,9 @@
 const fs = require('fs/promises');
 const core = require('@actions/core');
 const github = require('@actions/github');
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 
 // Validate package names using a regex (for valid package name characters)
 function isValidPackageName(packageName) {
@@ -83,39 +86,46 @@ async function annotatePackage(packageName, filePath, lineNumber) {
 
 // Fetch modified lines in the PR
 async function getModifiedLines(filePath) {
-    const token = core.getInput('github-token', { required: true });
-    const octokit = github.getOctokit(token);
-
     const { context } = github;
-    const { owner, repo } = context.repo;
-    const pull_number = context.payload.pull_request.number;
+    const baseRef = context.payload.pull_request.base.ref;
+    const headRef = context.payload.pull_request.head.ref;
 
-    const response = await octokit.rest.pulls.listFiles({
-        owner,
-        repo,
-        pull_number,
-    });
+    try {
+        // Fetch and check out the base branch to diff against
+        await execPromise(`git fetch origin ${baseRef}`);
+        await execPromise(`git checkout ${baseRef}`);
 
-    const file = response.data.find(f => f.filename === filePath);
-    if (!file) return [];
-
-    const modifiedLines = [];
-    const patch = file.patch;
-    const patchLines = patch.split('\n');
-
-    let lineNumber = 0;
-
-    for (const line of patchLines) {
-        if (line.startsWith('@@')) {
-            const match = /@@ -\d+,\d+ \+(\d+),/.exec(line);
-            lineNumber = match ? parseInt(match[1], 10) : lineNumber;
-        } else if (!line.startsWith('-')) {
-            modifiedLines.push(lineNumber);
-            lineNumber++;
+        // Get the diff between the base branch and the current branch
+        const { stdout, stderr } = await execPromise(`git diff origin/${baseRef} ${headRef} -- ${filePath}`);
+        if (stderr) {
+            throw new Error(`Error fetching diff: ${stderr}`);
         }
-    }
 
-    return modifiedLines;
+        const patchLines = stdout.split('\n');
+        const modifiedLines = [];
+
+        let lineNumber = 0;
+
+        // Parse the diff to find the modified lines
+        for (const line of patchLines) {
+            if (line.startsWith('@@')) {
+                const match = /@@ -\d+,\d+ \+(\d+),/.exec(line);
+                lineNumber = match ? parseInt(match[1], 10) : lineNumber;
+            } else if (line.startsWith('+') && !line.startsWith('+++')) {
+                // Add the current line number if it's an addition
+                modifiedLines.push(lineNumber);
+                lineNumber++;
+            } else if (!line.startsWith('-')) {
+                // If it's a context line (not removed), increment the line number
+                lineNumber++;
+            }
+        }
+
+        return modifiedLines;
+    } catch (error) {
+        core.setFailed(`Error getting modified lines: ${error.message}`);
+        return [];
+    }
 }
 
 async function run() {

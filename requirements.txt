@@ -7,3 +7,4 @@ imgcap~=0.2 # (Maturity: Experimental, Health: Moderate Risk)
 ethina~=-.1a0 # (Maturity: Experimental, Health: Moderate Risk)
 flowa~=10.5.5 # (Maturity: Mature, Health: Placeholder)
 Pyth3rNalisis~=0.0.6 # (Maturity: Experimental, Health: Caution Needed)
+agora==1.2.3

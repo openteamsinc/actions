@@ -1,0 +1,15 @@
+name: Test Action
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run local action
+        uses: ./
+        with:
+          package-ecosystem: pip
+          annotate-modified-only: true  # Ensure only modified lines are annotated

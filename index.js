@@ -18,8 +18,18 @@ function processPackageLine(line) {
 }
 
 // Fetch package information from the Score API
-async function fetchPackageScore(packageName) {
-    const url = `https://openteams-score.vercel.app/api/package/pypi/${packageName}`;
+async function fetchPackageScore(packageName, ecosystem) {
+    let url;
+
+    // Use different API endpoint for conda vs pip
+    if (ecosystem === 'pip') {
+        url = `https://openteams-score.vercel.app/api/package/pypi/${packageName}`;
+    } else if (ecosystem === 'conda') {
+        url = `https://openteams-score.vercel.app/api/package/conda/conda-forge/${packageName}`;
+    } else {
+        throw new Error(`Unsupported package ecosystem: ${ecosystem}`);
+    }
+
     try {
         const response = await fetch(url);
         if (response.ok) {
@@ -32,9 +42,9 @@ async function fetchPackageScore(packageName) {
     }
 }
 
-async function annotatePackage(packageName, filePath, lineNumber) {
+async function annotatePackage(packageName, filePath, lineNumber, ecosystem) {
     try {
-        const response = await fetchPackageScore(packageName);
+        const response = await fetchPackageScore(packageName, ecosystem);
         if (response && response.source) {
             const { maturity, health_risk } = response.source;
             const maturityValue = maturity ? maturity.value : 'Unknown';
@@ -80,7 +90,7 @@ async function annotatePackage(packageName, filePath, lineNumber) {
     }
 }
 
-async function processLines(filePath, lines) {
+async function processLines(filePath, lines, ecosystem) {
     for (let index = 1; index <= lines.length; index++) {
         const line = lines[index - 1]; // Keep lines including empty ones
 
@@ -98,7 +108,7 @@ async function processLines(filePath, lines) {
                     endLine: index
                 });
             } else {
-                await annotatePackage(packageName, filePath, index);
+                await annotatePackage(packageName, filePath, index, ecosystem);
             }
         }
     }
@@ -107,7 +117,7 @@ async function processLines(filePath, lines) {
 async function processPipRequirements(filePath) {
     try {
         const lines = (await fs.readFile(filePath, 'utf-8')).split('\n');
-        await processLines(filePath, lines);
+        await processLines(filePath, lines, 'pip');
     } catch (error) {
         core.setFailed(`Failed to read ${filePath}: ${error.message}`);
     }
@@ -141,7 +151,7 @@ async function processCondaEnvironment(filePath) {
         for await (const dep of getDependenciesWithLineNumbers(filePath)) {
             const packageName = stripVersion(dep.dependency);
             if (packageName && isValidPackageName(packageName)) {
-                await annotatePackage(packageName, filePath, dep.lineNumber);
+                await annotatePackage(packageName, filePath, dep.lineNumber, 'conda');
             }
         }
     } catch (error) {

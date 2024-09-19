@@ -17,13 +17,6 @@ function processPackageLine(line) {
     return stripVersion(cleanLine);
 }
 
-function parseFlowDependencies(flowString) {
-    // Remove leading and trailing brackets
-    const content = flowString.replace(/^\[|\]$/g, '');
-    // Split by commas and trim whitespace
-    return content.split(',').map(dep => dep.trim()).filter(dep => dep);
-}
-
 // Fetch package information from the Score API
 async function fetchPackageScore(packageName, ecosystem) {
     let url;
@@ -128,75 +121,57 @@ async function processPipRequirements(filePath) {
     }
 }
 
-async function* getDependenciesWithLineNumbers(filePath) {
+async function* getDependenciesWithLineNumbers(filePath) { 
     const fileContent = await fs.readFile(filePath, 'utf8');
     const lines = fileContent.split('\n');
-
+    
     let inDependencies = false;
     let inPipSection = false;
     let lineNumber = 0;
+    let pipIndentationLevel = null;
 
     for (const line of lines) {
         lineNumber++;
         const trimmedLine = line.trim();
+        const lineIndentation = line.match(/^(\s*)/)[1].length;
 
-        // Check for 'dependencies:'
-        if (trimmedLine.startsWith('dependencies:')) {
+        if (trimmedLine === 'dependencies:') {
             inDependencies = true;
             inPipSection = false;
-
-            // Check for flow-style dependencies
-            const depsLine = trimmedLine.substring('dependencies:'.length).trim();
-            if (depsLine.startsWith('[')) {
-                // Handle flow-style dependencies
-                const deps = parseFlowDependencies(depsLine);
-                for (const dep of deps) {
-                    yield { dependency: dep, lineNumber, ecosystem: 'conda' };
-                }
-                inDependencies = false;
-            }
+            pipIndentationLevel = null;
             continue;
         }
 
         if (inDependencies) {
-            // Check for '- pip:' indicating the start of the pip section
             if (trimmedLine.startsWith('- pip:')) {
                 inPipSection = true;
-
-                // Check for flow-style pip dependencies
-                const pipDepsLine = trimmedLine.substring('- pip:'.length).trim();
-                if (pipDepsLine.startsWith('[')) {
-                    const pipDeps = parseFlowDependencies(pipDepsLine);
-                    for (const dep of pipDeps) {
-                        yield { dependency: dep, lineNumber, ecosystem: 'pip' };
-                    }
-                    inPipSection = false;
-                }
+                pipIndentationLevel = lineIndentation + 2; // Indentation of pip dependencies
                 continue;
             }
 
             if (inPipSection) {
-                // Handle block-style pip dependencies
-                if (trimmedLine.startsWith('-')) {
-                    const dep = trimmedLine.substring(1).trim();
-                    yield { dependency: dep, lineNumber, ecosystem: 'pip' };
-                } else if (trimmedLine === '') {
-                    // Ignore empty lines
-                    continue;
+                if (lineIndentation > pipIndentationLevel) {
+                    // Inside pip dependencies
+                    const pipLineTrimmed = trimmedLine.startsWith('-') ? trimmedLine.substring(1).trim() : trimmedLine;
+                    if (pipLineTrimmed) {
+                        yield { dependency: pipLineTrimmed, lineNumber, ecosystem: 'pip' };
+                    }
                 } else {
-                    // End of pip section
+                    // Exiting pip dependencies
                     inPipSection = false;
+                    pipIndentationLevel = null;
                 }
-            } else {
-                // Handle block-style conda dependencies
+            }
+
+            if (!inPipSection) {
                 if (trimmedLine.startsWith('-')) {
-                    const dep = trimmedLine.substring(1).trim();
-                    yield { dependency: dep, lineNumber, ecosystem: 'conda' };
-                } else if (trimmedLine === '') {
-                    // Ignore empty lines
+                    const dependency = trimmedLine.substring(1).trim();
+                    yield { dependency, lineNumber, ecosystem: 'conda' };
+                } else if (!trimmedLine) {
+                    // Empty line, continue
                     continue;
                 } else {
-                    // End of dependencies section
+                    // Exiting dependencies section
                     inDependencies = false;
                 }
             }

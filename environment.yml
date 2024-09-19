@@ -1,0 +1,18 @@
+name: openScrape
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - numpy=1.26.4=py311h08b1b3b_0 
+  - numpy-base=1.26.4=py311hf175353_0
+  - openssl=3.0.14=h5eee18b_0
+  - pandas=2.2.2=py311ha02d727_0
+  - pip=24.0=py311h06a4308_0
+  - pip:
+      - agate==1.9.1
+      - annotated-types==0.7.0
+      - appdirs==1.4.4
+      - attrs==23.2.0
+      - babel==2.15.0
+      - beautifulsoup4==4.12.3
+      - black==24.4.2

@@ -22,4 +22,4 @@ jobs:
           npm run test
       - name: Build
         run: |
-          npm run build
+          npm run bundle

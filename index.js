@@ -1,4 +1,4 @@
-const fs = require('fs/promises');
+const fs = require('fs/promises'); // This already uses the promises API
 const core = require('@actions/core');
 
 // Validate package names using a regex (for valid package name characters)
@@ -113,8 +113,8 @@ async function processPipRequirements(filePath) {
     }
 }
 
-function* getDependenciesWithLineNumbers(filePath) {
-    const fileContent = fs.readFileSync(filePath, 'utf8');
+async function* getDependenciesWithLineNumbers(filePath) {
+    const fileContent = await fs.readFile(filePath, 'utf8');
     const lines = fileContent.split('\n');
     
     let inDependencies = false;
@@ -138,7 +138,7 @@ function* getDependenciesWithLineNumbers(filePath) {
 async function processCondaEnvironment(filePath) {
     try {
         // Iterate through dependencies with line numbers
-        for (const dep of getDependenciesWithLineNumbers(filePath)) {
+        for await (const dep of getDependenciesWithLineNumbers(filePath)) {
             const packageName = stripVersion(dep.dependency);
             if (packageName && isValidPackageName(packageName)) {
                 await annotatePackage(packageName, filePath, dep.lineNumber);

@@ -18,8 +18,16 @@ function processPackageLine(line) {
 }
 
 // Fetch package information from the Score API
-async function fetchPackageScore(packageName) {
-    const url = `https://openteams-score.vercel.app/api/package/pypi/${packageName}`;
+async function fetchPackageScore(packageName, ecosystem) {
+    let url;
+    if (ecosystem === 'pip') {
+        url = `https://openteams-score.vercel.app/api/package/pypi/${packageName}`;
+    } else if (ecosystem === 'conda') {
+        url = `https://openteams-score.vercel.app/api/package/conda/conda-forge/${packageName}`;
+    } else {
+        throw new Error(`Unknown ecosystem: ${ecosystem}`);
+    }
+
     try {
         const response = await fetch(url);
         if (response.ok) {
@@ -32,9 +40,9 @@ async function fetchPackageScore(packageName) {
     }
 }
 
-async function annotatePackage(packageName, filePath, lineNumber) {
+async function annotatePackage(packageName, ecosystem, filePath, lineNumber) {
     try {
-        const response = await fetchPackageScore(packageName);
+        const response = await fetchPackageScore(packageName, ecosystem);
         if (response && response.source) {
             const { maturity, health_risk } = response.source;
             const maturityValue = maturity ? maturity.value : 'Unknown';
@@ -59,7 +67,7 @@ async function annotatePackage(packageName, filePath, lineNumber) {
             }
 
             // Add annotation to the specific file and line number
-            core.notice(`Package ${packageName}: (Maturity: ${maturityValue}, Health: ${healthRiskValue}). ${recommendation}`, {
+            core.notice(`Package ${packageName} (${ecosystem}): (Maturity: ${maturityValue}, Health: ${healthRiskValue}). ${recommendation}`, {
                 file: filePath,
                 startLine: lineNumber,
                 endLine: lineNumber
@@ -98,7 +106,7 @@ async function processLines(filePath, lines) {
                     endLine: index
                 });
             } else {
-                await annotatePackage(packageName, filePath, index);
+                await annotatePackage(packageName, 'pip', filePath, index);
             }
         }
     }
@@ -118,29 +126,65 @@ async function* getDependenciesWithLineNumbers(filePath) {
     const lines = fileContent.split('\n');
     
     let inDependencies = false;
+    let inPipSection = false;
     let lineNumber = 0;
+    let pipIndentationLevel = null;
 
     for (const line of lines) {
         lineNumber++;
-        if (line.trim() === 'dependencies:') {
+        const trimmedLine = line.trim();
+        const lineIndentation = line.match(/^(\s*)/)[1].length;
+
+        if (trimmedLine === 'dependencies:') {
             inDependencies = true;
+            inPipSection = false;
+            pipIndentationLevel = null;
             continue;
         }
-        if (inDependencies && line.trim().startsWith('-')) {
-            const dependency = line.trim().substring(1).trim();
-            yield { dependency, lineNumber };
-        } else if (inDependencies && !line.trim().startsWith('-')) {
-            break;
+
+        if (inDependencies) {
+            if (trimmedLine.startsWith('- pip:')) {
+                inPipSection = true;
+                pipIndentationLevel = lineIndentation + 2; // Indentation of pip dependencies
+                continue;
+            }
+
+            if (inPipSection) {
+                if (lineIndentation > pipIndentationLevel) {
+                    // Inside pip dependencies
+                    const pipLineTrimmed = trimmedLine.startsWith('-') ? trimmedLine.substring(1).trim() : trimmedLine;
+                    if (pipLineTrimmed) {
+                        yield { dependency: pipLineTrimmed, lineNumber, ecosystem: 'pip' };
+                    }
+                } else {
+                    // Exiting pip dependencies
+                    inPipSection = false;
+                    pipIndentationLevel = null;
+                }
+            }
+
+            if (!inPipSection) {
+                if (trimmedLine.startsWith('-')) {
+                    const dependency = trimmedLine.substring(1).trim();
+                    yield { dependency, lineNumber, ecosystem: 'conda' };
+                } else if (!trimmedLine) {
+                    // Empty line, continue
+                    continue;
+                } else {
+                    // Exiting dependencies section
+                    inDependencies = false;
+                }
+            }
         }
     }
 }
 
 async function processCondaEnvironment(filePath) {
     try {
-        for await (const { dependency, lineNumber } of getDependenciesWithLineNumbers(filePath)) {
+        for await (const { dependency, lineNumber, ecosystem } of getDependenciesWithLineNumbers(filePath)) {
             const packageName = stripVersion(dependency);
             if (packageName && isValidPackageName(packageName)) {
-                await annotatePackage(packageName, filePath, lineNumber);
+                await annotatePackage(packageName, ecosystem, filePath, lineNumber);
             } else {
                 core.error(`Invalid package name: ${packageName}`, {
                     file: filePath,

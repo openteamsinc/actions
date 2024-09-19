@@ -1,6 +1,5 @@
 const fs = require('fs/promises');
 const core = require('@actions/core');
-const yaml = require('js-yaml');
 
 // Validate package names using a regex (for valid package name characters)
 function isValidPackageName(packageName) {
@@ -114,36 +113,36 @@ async function processPipRequirements(filePath) {
     }
 }
 
+function* getDependenciesWithLineNumbers(filePath) {
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    const lines = fileContent.split('\n');
+    
+    let inDependencies = false;
+    let lineNumber = 0;
+
+    for (const line of lines) {
+        lineNumber++;
+        if (line.trim() === 'dependencies:') {
+            inDependencies = true;
+            continue;
+        }
+        if (inDependencies && line.trim().startsWith('-')) {
+            const dependency = line.trim().substring(2);
+            yield { dependency, lineNumber };
+        } else if (inDependencies && !line.trim().startsWith('-')) {
+            break;
+        }
+    }
+}
+
 async function processCondaEnvironment(filePath) {
     try {
-        const fileContent = await fs.readFile(filePath, 'utf-8');
-        const environment = yaml.load(fileContent); // Load the YAML content
-
-        if (environment?.dependencies) {
-            let lineNumber = 1; // Start line number tracking
-
-            // Loop over each dependency in the "dependencies" section
-            for (const dependency of environment.dependencies) {
-                if (typeof dependency === 'string') {
-                    // It's a conda package, process it
-                    const packageName = stripVersion(dependency); // Strip version and build info
-                    if (packageName && isValidPackageName(packageName)) {
-                        await annotatePackage(packageName, filePath, lineNumber);
-                    }
-                    lineNumber++;
-                } else if (typeof dependency === 'object' && dependency.pip) {
-                    // Process nested pip dependencies
-                    for (const pipPackage of dependency.pip) {
-                        const pipPackageName = stripVersion(pipPackage);
-                        if (pipPackageName && isValidPackageName(pipPackageName)) {
-                            await annotatePackage(pipPackageName, filePath, lineNumber);
-                        }
-                        lineNumber++;
-                    }
-                }
+        // Iterate through dependencies with line numbers
+        for (const dep of getDependenciesWithLineNumbers(filePath)) {
+            const packageName = stripVersion(dep.dependency);
+            if (packageName && isValidPackageName(packageName)) {
+                await annotatePackage(packageName, filePath, dep.lineNumber);
             }
-        } else {
-            core.setFailed(`No dependencies found in ${filePath}`);
         }
     } catch (error) {
         core.setFailed(`Failed to read ${filePath}: ${error.message}`);

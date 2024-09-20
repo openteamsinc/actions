@@ -47,30 +47,47 @@ async function annotatePackage(packageName, filePath, lineNumber, ecosystem) {
             const healthRiskValue = health_risk ? health_risk.value : 'Unknown';
 
             let recommendation = '';
+            let logFunction = core.notice; // Default log level is notice
 
+            // Determine log level and recommendation based on maturity and health risk
             if (maturityValue === 'Mature' && healthRiskValue === 'Healthy') {
                 recommendation = 'This package is likely to enhance stability and maintainability with minimal risks.';
+                logFunction = core.notice; // Healthy package, log as notice
             } else if (maturityValue === 'Mature' && healthRiskValue === 'Moderate Risk') {
                 recommendation = 'The package is stable but may introduce some moderate risks.';
+                logFunction = core.warning; // Moderate risk, log as warning
             } else if (maturityValue === 'Mature' && healthRiskValue === 'High Risk') {
                 recommendation = 'The package is stable but introduces high risks.';
+                logFunction = core.error; // High risk, log as error
             } else if (maturityValue === 'Developing' && healthRiskValue === 'Healthy') {
                 recommendation = 'The package is in development but poses low risks.';
+                logFunction = core.notice; // Developing but healthy, log as notice
             } else if (maturityValue === 'Experimental' || healthRiskValue === 'High Risk') {
                 recommendation = 'This package may pose significant risks to stability and maintainability.';
+                logFunction = core.error; // Experimental or high risk, log as error
             } else if (maturityValue === 'Legacy') {
                 recommendation = 'This package is legacy and may not be stable, consider alternatives.';
+                logFunction = core.warning; // Legacy package, log as warning
+            } else if (
+                ['Not Found', 'Unknown', 'Placeholder'].includes(maturityValue) || 
+                ['Not Found', 'Unknown', 'Placeholder', 'Healthy'].includes(healthRiskValue)
+            ) {
+                recommendation = 'Insufficient data to make an informed recommendation.';
+                logFunction = core.notice; // Uncertain data or healthy, log as notice
             } else {
                 recommendation = 'Insufficient data to make an informed recommendation.';
+                logFunction = core.warning; // General warning for unspecified cases
             }
 
-            core.notice(`Package ${packageName} (${ecosystem}): (Maturity: ${maturityValue}, Health: ${healthRiskValue}). ${recommendation}`, {
+            // Add annotation to the specific file and line number
+            logFunction(`Package ${packageName} (${ecosystem}): (Maturity: ${maturityValue}, Health: ${healthRiskValue}). ${recommendation}`, {
                 file: filePath,
                 startLine: lineNumber,
                 endLine: lineNumber
             });
         } else {
-            core.error(`Package ${packageName} (${ecosystem}) not found.`, {
+            // When the package is not found, use core.notice
+            core.notice(`Package ${packageName} (${ecosystem}) not found.`, {
                 file: filePath,
                 startLine: lineNumber,
                 endLine: lineNumber

@@ -140,6 +140,11 @@ async function* getDependenciesWithLineNumbers(filePath) {
             console.log('Entered dependencies section');
             continue;
         }
+        if (inDependencies && line.trim() === '- pip:') {
+            inPipDependencies = true;
+            console.log('Entered pip dependencies section');
+            continue;
+        }
 
         // Handle base conda dependencies
         if (inDependencies && line.trim().startsWith('-') && !inPipDependencies) {
@@ -148,10 +153,6 @@ async function* getDependenciesWithLineNumbers(filePath) {
             yield { dependency, lineNumber, ecosystem: 'conda' };
 
         // Handle pip dependencies (nested pip section)
-        } else if (inDependencies && line.includes('pip:')) {
-            inPipDependencies = true;
-            console.log('Entered pip dependencies section');
-            continue;
         } else if (inPipDependencies && line.trim().startsWith('-')) {
             const dependency = line.trim().substring(2);
             console.log(`Found pip dependency: ${dependency} at line ${lineNumber}`);

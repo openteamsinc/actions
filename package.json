@@ -2,9 +2,12 @@
   "name": "annotate",
   "version": "1.0.0",
   "description": "This action reads a requirements.txt file and annotates each package with maturity and health data using the Score API.<br> It provides recommendations on whether adding the package improves stability and maintainability.",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest",
+    "bundle": "webpack",
+    "lint": "eslint ./src",
+    "lint:report": "eslint ./src --output-file eslint_report.json --format json"
   },
   "keywords": [],
   "author": "",
@@ -15,6 +18,13 @@
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@babel/preset-env": "^7.25.4",
+    "@eslint/js": "^9.10.0",
+    "babel-jest": "^29.7.0",
+    "eslint": "^9.10.0",
+    "globals": "^15.9.0",
+    "jest": "^29.7.0",
     "webpack": "^5.94.0",
     "webpack-cli": "^5.1.4"
   }

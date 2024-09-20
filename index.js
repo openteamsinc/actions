@@ -1,4 +1,4 @@
-const fs = require('fs/promises'); // This already uses the promises API
+const fs = require('fs/promises');
 const core = require('@actions/core');
 
 // Validate package names using a regex (for valid package name characters)
@@ -139,7 +139,7 @@ async function* getDependenciesWithLineNumbers(filePath) {
         }
 
         // Handle base conda dependencies
-        if (inDependencies && line.trim().startsWith('-') && !line.includes('pip:')) {
+        if (inDependencies && line.trim().startsWith('-') && !inPipDependencies) {
             const dependency = line.trim().substring(2);
             yield { dependency, lineNumber, ecosystem: 'conda' };
 

@@ -1,7 +1,6 @@
 const fs = require('fs/promises');
 const core = require('@actions/core');
 
-// Validate package names using a regex (for valid package name characters)
 function isValidPackageName(packageName) {
     const packageNamePattern = /^[a-zA-Z0-9._-]+$/;
     return packageNamePattern.test(packageName);
@@ -17,11 +16,8 @@ function processPackageLine(line) {
     return stripVersion(cleanLine);
 }
 
-// Fetch package information from the Score API
 async function fetchPackageScore(packageName, ecosystem) {
     let url;
-
-    // Use different API endpoint for conda vs pip
     if (ecosystem === 'pip') {
         url = `https://openteams-score.vercel.app/api/package/pypi/${packageName}`;
     } else if (ecosystem === 'conda') {
@@ -68,7 +64,6 @@ async function annotatePackage(packageName, filePath, lineNumber, ecosystem) {
                 recommendation = 'Insufficient data to make an informed recommendation.';
             }
 
-            // Add annotation to the specific file and line number, including the ecosystem information
             core.notice(`Package ${packageName} (${ecosystem}): (Maturity: ${maturityValue}, Health: ${healthRiskValue}). ${recommendation}`, {
                 file: filePath,
                 startLine: lineNumber,
@@ -92,12 +87,8 @@ async function annotatePackage(packageName, filePath, lineNumber, ecosystem) {
 
 async function processLines(filePath, lines, ecosystem) {
     for (let index = 1; index <= lines.length; index++) {
-        const line = lines[index - 1]; // Keep lines including empty ones
-
-        if (!line.trim()) {
-            // Skip processing empty lines, but continue incrementing line count
-            continue;
-        }
+        const line = lines[index - 1];
+        if (!line.trim()) continue;
 
         const packageName = processPackageLine(line);
         if (packageName) {
@@ -133,54 +124,41 @@ async function* getDependenciesWithLineNumbers(filePath) {
 
     for (const line of lines) {
         lineNumber++;
-        console.log(`Processing line ${lineNumber}: ${line.trim()}`);
-
         if (line.trim() === 'dependencies:') {
             inDependencies = true;
-            console.log('Entered dependencies section');
             continue;
         }
         if (inDependencies && line.trim() === '- pip:') {
             inPipDependencies = true;
-            console.log('Entered pip dependencies section');
             continue;
         }
 
-        // Handle base conda dependencies
         if (inDependencies && line.trim().startsWith('-') && !inPipDependencies) {
             const dependency = line.trim().substring(2);
-            console.log(`Found Conda dependency: ${dependency} at line ${lineNumber}`);
             yield { dependency, lineNumber, ecosystem: 'conda' };
-
-        // Handle pip dependencies (nested pip section)
         } else if (inPipDependencies && line.trim().startsWith('-')) {
             const dependency = line.trim().substring(2);
-            console.log(`Found pip dependency: ${dependency} at line ${lineNumber}`);
             yield { dependency, lineNumber, ecosystem: 'pip' };
         } else if (inPipDependencies && !line.trim().startsWith('-')) {
             inPipDependencies = false;
-            console.log('Exited pip dependencies section');
         }
     }
 }
 
 async function processCondaEnvironment(filePath) {
     try {
-        // Iterate through dependencies with line numbers
         for await (const dep of getDependenciesWithLineNumbers(filePath)) {
             const { dependency, lineNumber, ecosystem } = dep;
-            console.log(`Processing ${dependency} from line ${lineNumber} as part of the ${ecosystem} ecosystem`);
-            const packageName = stripVersion(dep.dependency);
+            const packageName = stripVersion(dependency);
             if (packageName && isValidPackageName(packageName)) {
-                await annotatePackage(packageName, filePath, dep.lineNumber, dep.ecosystem);
+                await annotatePackage(packageName, filePath, lineNumber, ecosystem);
             }
         }
     } catch (error) {
-        console.error(`Failed to read ${filePath}: ${error.message}`);
+        core.setFailed(`Failed to read ${filePath}: ${error.message}`);
     }
 }
 
-// Main entry point for the GitHub Action
 async function run() {
     const ecosystem = core.getInput('package-ecosystem', { required: true });
 

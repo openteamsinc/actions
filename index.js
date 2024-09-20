@@ -133,25 +133,32 @@ async function* getDependenciesWithLineNumbers(filePath) {
 
     for (const line of lines) {
         lineNumber++;
+        console.log(`Processing line ${lineNumber}: ${line.trim()}`);
+
         if (line.trim() === 'dependencies:') {
             inDependencies = true;
+            console.log('Entered dependencies section');
             continue;
         }
 
         // Handle base conda dependencies
         if (inDependencies && line.trim().startsWith('-') && !inPipDependencies) {
             const dependency = line.trim().substring(2);
+            console.log(`Found Conda dependency: ${dependency} at line ${lineNumber}`);
             yield { dependency, lineNumber, ecosystem: 'conda' };
 
         // Handle pip dependencies (nested pip section)
         } else if (inDependencies && line.includes('pip:')) {
             inPipDependencies = true;
+            console.log('Entered pip dependencies section');
             continue;
         } else if (inPipDependencies && line.trim().startsWith('-')) {
             const dependency = line.trim().substring(2);
+            console.log(`Found pip dependency: ${dependency} at line ${lineNumber}`);
             yield { dependency, lineNumber, ecosystem: 'pip' };
         } else if (inPipDependencies && !line.trim().startsWith('-')) {
             inPipDependencies = false;
+            console.log('Exited pip dependencies section');
         }
     }
 }
@@ -160,13 +167,15 @@ async function processCondaEnvironment(filePath) {
     try {
         // Iterate through dependencies with line numbers
         for await (const dep of getDependenciesWithLineNumbers(filePath)) {
+            const { dependency, lineNumber, ecosystem } = dep;
+            console.log(`Processing ${dependency} from line ${lineNumber} as part of the ${ecosystem} ecosystem`);
             const packageName = stripVersion(dep.dependency);
             if (packageName && isValidPackageName(packageName)) {
                 await annotatePackage(packageName, filePath, dep.lineNumber, dep.ecosystem);
             }
         }
     } catch (error) {
-        core.setFailed(`Failed to read ${filePath}: ${error.message}`);
+        console.error(`Failed to read ${filePath}: ${error.message}`);
     }
 }
 

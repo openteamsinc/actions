@@ -68,21 +68,21 @@ async function annotatePackage(packageName, filePath, lineNumber, ecosystem) {
                 recommendation = 'Insufficient data to make an informed recommendation.';
             }
 
-            // Add annotation to the specific file and line number
-            core.notice(`Package ${packageName}: (Maturity: ${maturityValue}, Health: ${healthRiskValue}). ${recommendation}`, {
+            // Add annotation to the specific file and line number, including the ecosystem information
+            core.notice(`Package ${packageName} (${ecosystem}): (Maturity: ${maturityValue}, Health: ${healthRiskValue}). ${recommendation}`, {
                 file: filePath,
                 startLine: lineNumber,
                 endLine: lineNumber
             });
         } else {
-            core.error(`Package ${packageName} not found.`, {
+            core.error(`Package ${packageName} (${ecosystem}) not found.`, {
                 file: filePath,
                 startLine: lineNumber,
                 endLine: lineNumber
             });
         }
     } catch (error) {
-        core.error(`Error looking up package ${packageName}: ${error.message}`, {
+        core.error(`Error looking up package ${packageName} (${ecosystem}): ${error.message}`, {
             file: filePath,
             startLine: lineNumber,
             endLine: lineNumber

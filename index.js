@@ -133,6 +133,20 @@ async function* getDependenciesWithLineNumbers(filePath) {
             continue;
         }
 
+        // Handle flow-style dependencies, e.g., "dependencies: [dep_a, dep_b]"
+        if (inDependencies && line.trim().startsWith('[')) {
+            const dependencies = line
+                .replace(/[\[\]]/g, '') // Remove square brackets
+                .split(',')
+                .map(dep => dep.trim()); // Split by comma and trim each dependency
+
+            for (const dependency of dependencies) {
+                if (dependency) {
+                    yield { dependency, lineNumber, ecosystem: 'conda' };
+                }
+            }
+        }
+
         if (inDependencies && line.trim().startsWith('-') && !inPipDependencies) {
             const dependency = line.trim().substring(2);
             yield { dependency, lineNumber, ecosystem: 'conda' };

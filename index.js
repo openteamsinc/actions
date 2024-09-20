@@ -134,11 +134,11 @@ async function* getDependenciesWithLineNumbers(filePath) {
         }
 
         // Handle flow-style dependencies, e.g., "dependencies: [dep_a, dep_b]"
-        if (inDependencies && line.trim().startsWith('[')) {
+        if (inDependencies && line.trim().startsWith('- [')) {
             const dependencies = line
-                .replace(/[\[\]]/g, '') // Remove square brackets
+                .substring(line.indexOf('[') + 1, line.indexOf(']'))
                 .split(',')
-                .map(dep => dep.trim()); // Split by comma and trim each dependency
+                .map(dep => dep.trim());
 
             for (const dependency of dependencies) {
                 if (dependency) {
@@ -147,7 +147,7 @@ async function* getDependenciesWithLineNumbers(filePath) {
             }
         }
 
-        if (inDependencies && line.trim().startsWith('-') && !inPipDependencies) {
+        if (inDependencies && line.trim().startsWith('-') && !inPipDependencies && !line.trim().startsWith('- [')) {
             const dependency = line.trim().substring(2);
             yield { dependency, lineNumber, ecosystem: 'conda' };
         } else if (inPipDependencies && line.trim().startsWith('-')) {

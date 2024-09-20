@@ -126,8 +126,9 @@ async function processPipRequirements(filePath) {
 async function* getDependenciesWithLineNumbers(filePath) {
     const fileContent = await fs.readFile(filePath, 'utf8');
     const lines = fileContent.split('\n');
-    
+
     let inDependencies = false;
+    let inPipDependencies = false;
     let lineNumber = 0;
 
     for (const line of lines) {
@@ -136,11 +137,21 @@ async function* getDependenciesWithLineNumbers(filePath) {
             inDependencies = true;
             continue;
         }
-        if (inDependencies && line.trim().startsWith('-')) {
+
+        // Handle base conda dependencies
+        if (inDependencies && line.trim().startsWith('-') && !line.includes('pip:')) {
             const dependency = line.trim().substring(2);
-            yield { dependency, lineNumber };
-        } else if (inDependencies && !line.trim().startsWith('-')) {
-            break;
+            yield { dependency, lineNumber, ecosystem: 'conda' };
+
+        // Handle pip dependencies (nested pip section)
+        } else if (inDependencies && line.includes('pip:')) {
+            inPipDependencies = true;
+            continue;
+        } else if (inPipDependencies && line.trim().startsWith('-')) {
+            const dependency = line.trim().substring(2);
+            yield { dependency, lineNumber, ecosystem: 'pip' };
+        } else if (inPipDependencies && !line.trim().startsWith('-')) {
+            inPipDependencies = false;
         }
     }
 }
@@ -151,7 +162,7 @@ async function processCondaEnvironment(filePath) {
         for await (const dep of getDependenciesWithLineNumbers(filePath)) {
             const packageName = stripVersion(dep.dependency);
             if (packageName && isValidPackageName(packageName)) {
-                await annotatePackage(packageName, filePath, dep.lineNumber, 'conda');
+                await annotatePackage(packageName, filePath, dep.lineNumber, dep.ecosystem);
             }
         }
     } catch (error) {

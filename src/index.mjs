@@ -1,5 +1,5 @@
-const fs = require('fs/promises');
-const core = require('@actions/core');
+import fs from "fs/promises";
+import core from "@actions/core";
 
 function isValidPackageName(packageName) {
     const packageNamePattern = /^[a-zA-Z0-9._-]+$/;

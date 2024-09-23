@@ -121,13 +121,14 @@ async function annotatePackage(packageName, filePath, lineNumber) {
 
 // Main function to process the requirements.txt file for pip packages
 async function run() {
-  const filePath = "requirements.txt";
+  let filePath;
   const ecosystem = core.getInput("package-ecosystem", { required: true });
 
   if (ecosystem !== "pip") {
     core.setFailed(`Unsupported package ecosystem: ${ecosystem}`);
     return;
   }
+  filePath = core.getInput("requirements-path");
 
   try {
     const packages = (await fs.readFile(filePath, "utf-8"))

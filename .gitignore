@@ -162,4 +162,8 @@ cython_debug/
 #.idea/
 
 node_modules
-package-lock.json
+package-lock.jsondist/*.LICENSE.txt
+dist/index.cjs.LICENSE.txt
+log.html
+output.xml
+report.html

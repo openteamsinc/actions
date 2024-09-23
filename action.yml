@@ -2,15 +2,15 @@ name: "Annotate Requirements"
 description: "Annotates the requirements.txt file using the Score API"
 runs:
   using: "node20"
-  main: "dist/index.js"
+  main: "dist/index.cjs"
 inputs:
   package-ecosystem:
     description: "The package manager ecosystem to annotate. Currently supports 'pip' and 'conda'."
     required: true
-  # requirements-path:
-  #   description: "Path to the requirements.txt file to annotate."
-  #   required: false
-  #   default: "requirements.txt"
+  requirements-path:
+    description: "Path to the requirements.txt file to annotate."
+    required: false
+    default: "requirements.txt"
   # verbose:
   #   description: "Set to true to enable detailed logging."
   #   required: false

@@ -16,12 +16,12 @@ function processPackageLine(line) {
   return stripVersion(cleanLine);
 }
 
-async function fetchPackageScore(packageName, ecosystem) {
+async function fetchPackageScore(packageName, ecosystem, channel) {
   let url;
   if (ecosystem === 'pip') {
       url = `https://openteams-score.vercel.app/api/package/pypi/${packageName}`;
   } else if (ecosystem === 'conda') {
-      url = `https://openteams-score.vercel.app/api/package/conda/conda-forge/${packageName}`;
+      url = `https://openteams-score.vercel.app/api/package/conda/${channel}/${packageName}`;
   } else {
       throw new Error(`Unsupported package ecosystem: ${ecosystem}`);
   }
@@ -38,9 +38,9 @@ async function fetchPackageScore(packageName, ecosystem) {
   }
 }
 
-async function annotatePackage(packageName, filePath, lineNumber, ecosystem) {
+async function annotatePackage(packageName, filePath, lineNumber, ecosystem, channel) {
   try {
-      const response = await fetchPackageScore(packageName, ecosystem);
+      const response = await fetchPackageScore(packageName, ecosystem, channel);
       if (response && response.source) {
           const { maturity, health_risk } = response.source;
           const maturityValue = maturity ? maturity.value : 'Unknown';
@@ -132,57 +132,70 @@ async function processPipRequirements(filePath) {
 }
 
 async function* getDependenciesWithLineNumbers(filePath) {
-  const fileContent = await fs.readFile(filePath, 'utf8');
-  const lines = fileContent.split('\n');
-
-  let inDependencies = false;
-  let inPipDependencies = false;
-  let lineNumber = 0;
-
-  for (const line of lines) {
-      lineNumber++;
-      if (line.trim() === 'dependencies:') {
-          inDependencies = true;
-          continue;
-      }
-      if (inDependencies && line.trim() === '- pip:') {
-          inPipDependencies = true;
-          continue;
-      }
-
-      // Handle flow-style dependencies, e.g., "dependencies: [dep_a, dep_b]"
-      if (inDependencies && line.trim().startsWith('- [')) {
-          const dependencies = line
-              .substring(line.indexOf('[') + 1, line.indexOf(']'))
-              .split(',')
-              .map(dep => dep.trim());
-
-          for (const dependency of dependencies) {
-              if (dependency) {
-                  yield { dependency, lineNumber, ecosystem: 'conda' };
-              }
-          }
-      }
-
-      if (inDependencies && line.trim().startsWith('-') && !inPipDependencies && !line.trim().startsWith('- [')) {
-          const dependency = line.trim().substring(2);
-          yield { dependency, lineNumber, ecosystem: 'conda' };
-      } else if (inPipDependencies && line.trim().startsWith('-')) {
-          const dependency = line.trim().substring(2);
-          yield { dependency, lineNumber, ecosystem: 'pip' };
-      } else if (inPipDependencies && !line.trim().startsWith('-')) {
-          inPipDependencies = false;
-      }
+    const fileContent = await fs.readFile(filePath, 'utf8');
+    const lines = fileContent.split('\n');
+  
+    let inDependencies = false;
+    let inPipDependencies = false;
+    let lineNumber = 0;
+    let condaChannel = 'conda-forge';
+  
+    for (const line of lines) {
+        lineNumber++;
+  
+        // Detect the channels section and extract the non-default channel
+        if (line.trim().startsWith('channels:')) {
+            continue;
+        }
+        if (line.trim().startsWith('-') && !inDependencies) {
+            const channel = line.trim().substring(2);
+            if (channel !== 'defaults') {
+                condaChannel = channel;
+            }
+        }
+  
+        if (line.trim() === 'dependencies:') {
+            inDependencies = true;
+            continue;
+        }
+        if (inDependencies && line.trim() === '- pip:') {
+            inPipDependencies = true;
+            continue;
+        }
+  
+        // Handle flow-style dependencies, e.g., "dependencies: [dep_a, dep_b]"
+        if (inDependencies && line.trim().startsWith('- [')) {
+            const dependencies = line
+                .substring(line.indexOf('[') + 1, line.indexOf(']'))
+                .split(',')
+                .map(dep => dep.trim());
+  
+            for (const dependency of dependencies) {
+                if (dependency) {
+                    yield { dependency, lineNumber, ecosystem: 'conda', channel: condaChannel };
+                }
+            }
+        }
+  
+        if (inDependencies && line.trim().startsWith('-') && !inPipDependencies && !line.trim().startsWith('- [')) {
+            const dependency = line.trim().substring(2);
+            yield { dependency, lineNumber, ecosystem: 'conda', channel: condaChannel };
+        } else if (inPipDependencies && line.trim().startsWith('-')) {
+            const dependency = line.trim().substring(2);
+            yield { dependency, lineNumber, ecosystem: 'pip', channel: 'conda-forge'};
+        } else if (inPipDependencies && !line.trim().startsWith('-')) {
+            inPipDependencies = false;
+        }
+    }
   }
-}
 
 async function processCondaEnvironment(filePath) {
   try {
       for await (const dep of getDependenciesWithLineNumbers(filePath)) {
-          const { dependency, lineNumber, ecosystem } = dep;
+          const { dependency, lineNumber, ecosystem, channel } = dep;
           const packageName = stripVersion(dependency);
           if (packageName && isValidPackageName(packageName)) {
-              await annotatePackage(packageName, filePath, lineNumber, ecosystem);
+              await annotatePackage(packageName, filePath, lineNumber, ecosystem, channel);
           }
       }
   } catch (error) {

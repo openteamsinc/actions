@@ -10,8 +10,6 @@ Test PIP
     Should Be Equal As Integers    ${result.rc}    0
     Should Not Contain    ${result.stdout}    FAIL
     Should Contain    ${result.stdout}    Package flask
-    # Terminate Process    ${handle}
-    # Should Be Equal As Integers    ${result.rc}    0
 
 Test Conda
     ${result} =    Run Process    node ${CURDIR}/../dist/index.cjs    shell=True    env:INPUT_PACKAGE-ECOSYSTEM=conda
@@ -19,6 +17,3 @@ Test Conda
     Log to console    ${result.stdout}
     Should Be Equal As Integers    ${result.rc}    1
     Should Contain    ${result.stdout}    Unsupported package ecosystem
-    # Terminate Process    ${handle}
-    # ${result} =    Wait For Process    First
-    # Should Be Equal As Integers    ${result.rc}    0

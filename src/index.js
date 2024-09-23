@@ -1,5 +1,5 @@
-import fs from "fs/promises";
-import core from "@actions/core";
+const fs = require('fs/promises');
+const core = require('@actions/core');
 
 function isValidPackageName(packageName) {
     console.log(`Validating package name: ${packageName}`);

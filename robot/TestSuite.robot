@@ -2,9 +2,6 @@
 Library           Process
 Suite Teardown    Terminate All Processes    kill=True
 
-*** Variables ***
-${ANNOTATE_MODIFIED_ONLY}    true
-
 *** Test Cases ***
 Test PIP
     ${result} =    Run Process    env    shell=True    env:INPUT_PACKAGE-ECOSYSTEM=pip    env:INPUT_REQUIREMENTS-PATH=${CURDIR}/requirements.txt    env:INPUT_ANNOTATE-MODIFIED-ONLY=${ANNOTATE_MODIFIED_ONLY}

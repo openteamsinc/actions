@@ -30639,7 +30639,7 @@ var __webpack_exports__ = {};
 ;// CONCATENATED MODULE: external "fs/promises"
 const promises_namespaceObject = require("fs/promises");
 // EXTERNAL MODULE: ./node_modules/@actions/core/lib/core.js
-var lib_core = __webpack_require__(6977);
+var core = __webpack_require__(6977);
 // EXTERNAL MODULE: ./node_modules/@actions/github/lib/github.js
 var github = __webpack_require__(2453);
 ;// CONCATENATED MODULE: external "child_process"
@@ -30670,6 +30670,7 @@ function processPackageLine(line) {
     return stripVersion(cleanLine);
 }
 
+// Fetch package information from the Score API for both pip and conda
 async function fetchPackageScore(packageName, ecosystem) {
     let url;
     if (ecosystem === 'pip') {
@@ -30701,36 +30702,36 @@ async function annotatePackage(packageName, filePath, lineNumber, ecosystem) {
             const healthRiskValue = health_risk ? health_risk.value : 'Unknown';
 
             let recommendation = '';
-            let logFunction = lib_core.notice; // Default log level is notice
+            let logFunction = core.notice; // Default log level is notice
 
             // Determine log level and recommendation based on maturity and health risk
             if (maturityValue === 'Mature' && healthRiskValue === 'Healthy') {
                 recommendation = 'This package is likely to enhance stability and maintainability with minimal risks.';
-                logFunction = lib_core.notice; // Healthy package, log as notice
+                logFunction = core.notice; // Healthy package, log as notice
             } else if (maturityValue === 'Mature' && healthRiskValue === 'Moderate Risk') {
                 recommendation = 'The package is stable but may introduce some moderate risks.';
-                logFunction = lib_core.warning; // Moderate risk, log as warning
+                logFunction = core.warning; // Moderate risk, log as warning
             } else if (maturityValue === 'Mature' && healthRiskValue === 'High Risk') {
                 recommendation = 'The package is stable but introduces high risks.';
-                logFunction = lib_core.error; // High risk, log as error
+                logFunction = core.error; // High risk, log as error
             } else if (maturityValue === 'Developing' && healthRiskValue === 'Healthy') {
                 recommendation = 'The package is in development but poses low risks.';
-                logFunction = lib_core.notice; // Developing but healthy, log as notice
+                logFunction = core.notice; // Developing but healthy, log as notice
             } else if (maturityValue === 'Experimental' || healthRiskValue === 'High Risk') {
                 recommendation = 'This package may pose significant risks to stability and maintainability.';
-                logFunction = lib_core.error; // Experimental or high risk, log as error
+                logFunction = core.error; // Experimental or high risk, log as error
             } else if (maturityValue === 'Legacy') {
                 recommendation = 'This package is legacy and may not be stable, consider alternatives.';
-                logFunction = lib_core.warning; // Legacy package, log as warning
+                logFunction = core.warning; // Legacy package, log as warning
             } else if (
                 ['Not Found', 'Unknown', 'Placeholder'].includes(maturityValue) || 
                 ['Not Found', 'Unknown', 'Placeholder', 'Healthy'].includes(healthRiskValue)
             ) {
                 recommendation = 'Insufficient data to make an informed recommendation.';
-                logFunction = lib_core.notice; // Uncertain data or healthy, log as notice
+                logFunction = core.notice; // Uncertain data or healthy, log as notice
             } else {
                 recommendation = 'Insufficient data to make an informed recommendation.';
-                logFunction = lib_core.warning; // General warning for unspecified cases
+                logFunction = core.warning; // General warning for unspecified cases
             }
 
             // Add annotation to the specific file and line number
@@ -30741,14 +30742,14 @@ async function annotatePackage(packageName, filePath, lineNumber, ecosystem) {
             });
         } else {
             // When the package is not found, use core.notice
-            lib_core.notice(`Package ${packageName} (${ecosystem}) not found.`, {
+            core.notice(`Package ${packageName} (${ecosystem}) not found.`, {
                 file: filePath,
                 startLine: lineNumber,
                 endLine: lineNumber
             });
         }
     } catch (error) {
-        lib_core.error(`Error looking up package ${packageName} (${ecosystem}): ${error.message}`, {
+        core.error(`Error looking up package ${packageName} (${ecosystem}): ${error.message}`, {
             file: filePath,
             startLine: lineNumber,
             endLine: lineNumber
@@ -30778,7 +30779,7 @@ async function processLines(filePath, lines, ecosystem) {
 
 async function processPipRequirements(filePath) {
     try {
-        const lines = (await fs.readFile(filePath, 'utf-8')).split('\n');
+        const lines = (await promises_namespaceObject.readFile(filePath, 'utf-8')).split('\n');
         await processLines(filePath, lines, 'pip');
     } catch (error) {
         core.setFailed(`Failed to read ${filePath}: ${error.message}`);
@@ -30786,7 +30787,7 @@ async function processPipRequirements(filePath) {
 }
 
 async function* getDependenciesWithLineNumbers(filePath) {
-    const fileContent = await fs.readFile(filePath, 'utf8');
+    const fileContent = await promises_namespaceObject.readFile(filePath, 'utf8');
     const lines = fileContent.split('\n');
 
     let inDependencies = false;
@@ -30849,22 +30850,22 @@ async function getModifiedLines(filePath) {
     const { context } = github;
     const baseRef = context.payload.pull_request.base.ref;
     const headRef = context.payload.pull_request.head.ref;
-  
+
     try {
         // Fetch the base branch to ensure we have the latest state of baseRef locally
         await execPromise(`git fetch origin ${baseRef}`);
-  
+
         // Get the diff between the base branch and the current branch without checking out baseRef
         const { stdout, stderr } = await execPromise(`git diff origin/${baseRef} ${headRef} -- ${filePath}`);
         if (stderr) {
             throw new Error(`Error fetching diff: ${stderr}`);
         }
-  
+
         const patchLines = stdout.split('\n');
         const modifiedLines = [];
-  
+
         let lineNumber = 0;
-  
+
         // Parse the diff to find the modified lines
         for (const line of patchLines) {
             if (line.startsWith('@@')) {
@@ -30879,58 +30880,39 @@ async function getModifiedLines(filePath) {
                 lineNumber++;
             }
         }
-  
+
         return modifiedLines;
     } catch (error) {
-        lib_core.setFailed(`Error getting modified lines: ${error.message}`);
+        core.setFailed(`Error getting modified lines: ${error.message}`);
         return [];
     }
 }
-  
-// Main function to process the requirements.txt file for pip packages
+
 async function run() {
-    const filePath = 'requirements.txt';
-    const ecosystem = lib_core.getInput('package-ecosystem', { required: true });
-    const annotateModifiedOnly = lib_core.getInput('annotate-modified-only') === 'true';
-
-    if (ecosystem !== 'pip') {
-        lib_core.setFailed(`Unsupported package ecosystem: ${ecosystem}`);
-        return;
-    }
-
+    const ecosystem = core.getInput('package-ecosystem', { required: true });
+    const annotateModifiedOnly = core.getInput('annotate-modified-only') === 'true';
     let modifiedLines = [];
-    if (annotateModifiedOnly) {
-        modifiedLines = await getModifiedLines(filePath);
-        if (modifiedLines.length === 0) {
-            lib_core.info(`No modified lines found in ${filePath}`);
-            return;
+
+    if (ecosystem === 'pip') {
+        if (annotateModifiedOnly) {
+            modifiedLines = await getModifiedLines('requirements.txt');
         }
-    }
-
-    try {
-        const packages = (await promises_namespaceObject.readFile(filePath, 'utf-8')).split('\n').filter(pkg => pkg);
-
-        packages.forEach((packageLine, index) => {
-            const packageName = processPackageLine(packageLine);
-            const lineNumber = index + 1;
-
-            if (packageName) {
-                if (!isValidPackageName(packageName)) {
-                    lib_core.error(`Invalid package name: ${packageName}`, {
-                        file: filePath,
-                        startLine: lineNumber,
-                        endLine: lineNumber
-                    });
-                    return;
-                }
-
-                if (!annotateModifiedOnly || modifiedLines.includes(lineNumber)) {
-                    annotatePackage(packageName, filePath, lineNumber);
-                }
-            }
-        });
-    } catch (error) {
-        lib_core.setFailed(`Failed to read ${filePath}: ${error.message}`);
+        if (modifiedLines.length > 0) {
+            await processLines('requirements.txt', modifiedLines, 'pip');
+        } else {
+            await processPipRequirements('requirements.txt');
+        }
+    } else if (ecosystem === 'conda') {
+        if (annotateModifiedOnly) {
+            modifiedLines = await getModifiedLines('environment.yml');
+        }
+        if (modifiedLines.length > 0) {
+            await processLines('environment.yml', modifiedLines, 'conda');
+        } else {
+            await processCondaEnvironment('environment.yml');
+        }
+    } else {
+        core.setFailed(`Unsupported package ecosystem: ${ecosystem}`);
     }
 }
 

@@ -21,6 +21,7 @@ function processPackageLine(line) {
     return stripVersion(cleanLine);
 }
 
+// Fetch package information from the Score API for both pip and conda
 async function fetchPackageScore(packageName, ecosystem) {
     let url;
     if (ecosystem === 'pip') {
@@ -200,22 +201,22 @@ async function getModifiedLines(filePath) {
     const { context } = github;
     const baseRef = context.payload.pull_request.base.ref;
     const headRef = context.payload.pull_request.head.ref;
-  
+
     try {
         // Fetch the base branch to ensure we have the latest state of baseRef locally
         await execPromise(`git fetch origin ${baseRef}`);
-  
+
         // Get the diff between the base branch and the current branch without checking out baseRef
         const { stdout, stderr } = await execPromise(`git diff origin/${baseRef} ${headRef} -- ${filePath}`);
         if (stderr) {
             throw new Error(`Error fetching diff: ${stderr}`);
         }
-  
+
         const patchLines = stdout.split('\n');
         const modifiedLines = [];
-  
+
         let lineNumber = 0;
-  
+
         // Parse the diff to find the modified lines
         for (const line of patchLines) {
             if (line.startsWith('@@')) {
@@ -230,58 +231,39 @@ async function getModifiedLines(filePath) {
                 lineNumber++;
             }
         }
-  
+
         return modifiedLines;
     } catch (error) {
         core.setFailed(`Error getting modified lines: ${error.message}`);
         return [];
     }
 }
-  
-// Main function to process the requirements.txt file for pip packages
+
 async function run() {
-    const filePath = 'requirements.txt';
     const ecosystem = core.getInput('package-ecosystem', { required: true });
     const annotateModifiedOnly = core.getInput('annotate-modified-only') === 'true';
-
-    if (ecosystem !== 'pip') {
-        core.setFailed(`Unsupported package ecosystem: ${ecosystem}`);
-        return;
-    }
-
     let modifiedLines = [];
-    if (annotateModifiedOnly) {
-        modifiedLines = await getModifiedLines(filePath);
-        if (modifiedLines.length === 0) {
-            core.info(`No modified lines found in ${filePath}`);
-            return;
+
+    if (ecosystem === 'pip') {
+        if (annotateModifiedOnly) {
+            modifiedLines = await getModifiedLines('requirements.txt');
         }
-    }
-
-    try {
-        const packages = (await fs.readFile(filePath, 'utf-8')).split('\n').filter(pkg => pkg);
-
-        packages.forEach((packageLine, index) => {
-            const packageName = processPackageLine(packageLine);
-            const lineNumber = index + 1;
-
-            if (packageName) {
-                if (!isValidPackageName(packageName)) {
-                    core.error(`Invalid package name: ${packageName}`, {
-                        file: filePath,
-                        startLine: lineNumber,
-                        endLine: lineNumber
-                    });
-                    return;
-                }
-
-                if (!annotateModifiedOnly || modifiedLines.includes(lineNumber)) {
-                    annotatePackage(packageName, filePath, lineNumber);
-                }
-            }
-        });
-    } catch (error) {
-        core.setFailed(`Failed to read ${filePath}: ${error.message}`);
+        if (modifiedLines.length > 0) {
+            await processLines('requirements.txt', modifiedLines, 'pip');
+        } else {
+            await processPipRequirements('requirements.txt');
+        }
+    } else if (ecosystem === 'conda') {
+        if (annotateModifiedOnly) {
+            modifiedLines = await getModifiedLines('environment.yml');
+        }
+        if (modifiedLines.length > 0) {
+            await processLines('environment.yml', modifiedLines, 'conda');
+        } else {
+            await processCondaEnvironment('environment.yml');
+        }
+    } else {
+        core.setFailed(`Unsupported package ecosystem: ${ecosystem}`);
     }
 }
 

@@ -1,6 +1,5 @@
 import fs from "fs/promises";
 import core from "@actions/core";
-import github from '@actions/github';
 import { exec } from 'child_process';
 import util from 'util';
 

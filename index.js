@@ -107,11 +107,10 @@ async function getModifiedLines(filePath) {
     const headRef = context.payload.pull_request.head.ref;
 
     try {
-        // Fetch and check out the base branch to diff against
+        // Fetch the base branch to ensure we have the latest state of baseRef locally
         await execPromise(`git fetch origin ${baseRef}`);
-        await execPromise(`git checkout ${baseRef}`);
-
-        // Get the diff between the base branch and the current branch
+        
+        // Get the diff between the base branch and the current branch without checking out baseRef
         const { stdout, stderr } = await execPromise(`git diff origin/${baseRef} ${headRef} -- ${filePath}`);
         if (stderr) {
             throw new Error(`Error fetching diff: ${stderr}`);

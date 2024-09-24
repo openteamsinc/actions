@@ -197,19 +197,12 @@ async function processCondaEnvironment(filePath) {
 }
 
 // Fetch modified lines in the PR
-async function getModifiedLines(filePath) {
-    const { context } = github;
-    const baseRef = context.payload.pull_request.base.ref;
-    const headRef = context.payload.pull_request.head.ref;
-
+async function getModifiedLinesFromCommitDiff(filePath) {
     try {
-        // Fetch the base branch to ensure we have the latest state of baseRef locally
-        await execPromise(`git fetch origin ${baseRef}`);
-
-        // Get the diff between the base branch and the current branch without checking out baseRef
-        const { stdout, stderr } = await execPromise(`git diff origin/${baseRef} ${headRef} -- ${filePath}`);
+        // Get the diff between the last two commits
+        const { stdout, stderr } = await execPromise(`git diff HEAD^ HEAD -- ${filePath}`);
         if (stderr) {
-            throw new Error(`Error fetching diff: ${stderr}`);
+            throw new Error(`Error fetching commit diff: ${stderr}`);
         }
 
         const patchLines = stdout.split('\n');
@@ -234,7 +227,7 @@ async function getModifiedLines(filePath) {
 
         return modifiedLines;
     } catch (error) {
-        core.setFailed(`Error getting modified lines: ${error.message}`);
+        core.setFailed(`Error getting modified lines from commit diff: ${error.message}`);
         return [];
     }
 }
@@ -246,7 +239,8 @@ async function run() {
 
     if (ecosystem === 'pip') {
         if (annotateModifiedOnly) {
-            modifiedLines = await getModifiedLines('requirements.txt');
+
+            modifiedLines = await getModifiedLinesFromCommitDiff('requirements.txt');
         }
         if (modifiedLines.length > 0) {
             await processLines('requirements.txt', modifiedLines, 'pip');
@@ -255,7 +249,7 @@ async function run() {
         }
     } else if (ecosystem === 'conda') {
         if (annotateModifiedOnly) {
-            modifiedLines = await getModifiedLines('environment.yml');
+            modifiedLines = await getModifiedLinesFromCommitDiff('environment.yml');
         }
         if (modifiedLines.length > 0) {
             await processLines('environment.yml', modifiedLines, 'conda');

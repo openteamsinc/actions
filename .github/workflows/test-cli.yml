@@ -21,8 +21,8 @@ jobs:
           pip install -r test-requirements.txt
 
       - name: Run PIP CLI
-      run: |
-        env INPUT_PACKAGE-ECOSYSTEM=pip INPUT_REQUIREMENTS-PATH=robot/requirements.txt INPUT_ANNOTATE-MODIFIED-ONLY=true node dist/index.cjs
+        run: |
+          env INPUT_PACKAGE-ECOSYSTEM=pip INPUT_REQUIREMENTS-PATH=robot/requirements.txt INPUT_ANNOTATE-MODIFIED-ONLY=true node dist/index.cjs
       # - name: Run Conda CLI
       #   run: |
       #     env INPUT_PACKAGE-ECOSYSTEM=conda INPUT_ANNOTATE-MODIFIED-ONLY=true node dist/index.cjs

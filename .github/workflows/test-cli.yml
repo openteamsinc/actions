@@ -1,0 +1,28 @@
+name: Test CLI
+
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Node 20
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.x
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r test-requirements.txt
+
+      - name: Run PIP CLI
+        run: |
+          env INPUT_PACKAGE-ECOSYSTEM=pip INPUT_REQUIREMENTS-PATH=robot/requirements.txt node dist/index.cjs
+      # - name: Run Conda CLI
+      #   run: |
+      #     env INPUT_PACKAGE-ECOSYSTEM=conda node dist/index.cjs

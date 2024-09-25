@@ -200,14 +200,13 @@ async function processCondaEnvironment(filePath) {
 async function getModifiedLines(filePath) {
     const { context } = github;
     const baseRef = context.payload.pull_request.base.ref;
-    const headRef = context.payload.pull_request.head.ref;
-
+    
     try {
         // Fetch the base branch to ensure we have the latest state of baseRef locally
         await execPromise(`git fetch origin ${baseRef}`);
 
-        // Get the diff between the base branch and the current branch without checking out baseRef
-        const { stdout, stderr } = await execPromise(`git diff origin/${baseRef} ${headRef} -- ${filePath}`);
+        // Get the diff between the base branch and the current
+        const { stdout, stderr } = await execPromise(`git diff origin/${baseRef} HEAD -- ${filePath}`);
         if (stderr) {
             throw new Error(`Error fetching diff: ${stderr}`);
         }

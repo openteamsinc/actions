@@ -26686,23 +26686,39 @@ async function annotatePackage(packageName, filePath, lineNumber, ecosystem) {
     }
 }
 
-async function processLines(filePath, lines, ecosystem) {
-    for (let index = 1; index <= lines.length; index++) {
-        const line = lines[index - 1];
-        if (!line.trim()) continue;
+async function processLines(filePath, modifiedLineNumbers, ecosystem) {
+    try {
+        // Read all lines from the file
+        const allLines = (await promises_namespaceObject.readFile(filePath, 'utf-8')).split('\n');
 
-        const packageName = processPackageLine(line);
-        if (packageName) {
-            if (!isValidPackageName(packageName)) {
-                core.error(`Invalid package name: ${packageName}`, {
-                    file: filePath,
-                    startLine: index,
-                    endLine: index
-                });
-            } else {
-                await annotatePackage(packageName, filePath, index, ecosystem);
+        // Iterate over the modified line numbers, and fetch corresponding lines
+        for (const lineNumber of modifiedLineNumbers) {
+            // Get the line content using the line number (adjust for zero-index)
+            const line = allLines[lineNumber - 1];
+
+            // Ensure line is a string before calling trim()
+            if (typeof line !== 'string') {
+                core.warning(`Skipping non-string line at line number ${lineNumber}: ${JSON.stringify(line)}`);
+                continue;
+            }
+
+            if (!line.trim()) continue;
+
+            const packageName = processPackageLine(line);
+            if (packageName) {
+                if (!isValidPackageName(packageName)) {
+                    core.error(`Invalid package name: ${packageName}`, {
+                        file: filePath,
+                        startLine: lineNumber,
+                        endLine: lineNumber
+                    });
+                } else {
+                    await annotatePackage(packageName, filePath, lineNumber, ecosystem);
+                }
             }
         }
+    } catch (error) {
+        core.setFailed(`Failed to process lines in ${filePath}: ${error.message}`);
     }
 }
 
@@ -26777,7 +26793,6 @@ async function processCondaEnvironment(filePath) {
 // Fetch modified lines in the PR
 async function getModifiedLinesFromCommitDiff(filePath) {
     try {
-        // Get the diff between the last two commits
         const { stdout, stderr } = await execPromise(`git diff HEAD^ HEAD -- ${filePath}`);
         if (stderr) {
             throw new Error(`Error fetching commit diff: ${stderr}`);
@@ -26788,17 +26803,17 @@ async function getModifiedLinesFromCommitDiff(filePath) {
 
         let lineNumber = 0;
 
-        // Parse the diff to find the modified lines
+        // Parse the diff to find the modified lines (based on Git diff format)
         for (const line of patchLines) {
             if (line.startsWith('@@')) {
                 const match = /@@ -\d+,\d+ \+(\d+),/.exec(line);
                 lineNumber = match ? parseInt(match[1], 10) : lineNumber;
             } else if (line.startsWith('+') && !line.startsWith('+++')) {
-                // Add the current line number if it's an addition
+                // Track the modified line numbers
                 modifiedLines.push(lineNumber);
                 lineNumber++;
             } else if (!line.startsWith('-')) {
-                // If it's a context line (not removed), increment the line number
+                // Increment the line number for non-removed lines
                 lineNumber++;
             }
         }

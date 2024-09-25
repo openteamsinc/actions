@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import core from "@actions/core";
+import github from '@actions/github';
 import { exec } from 'child_process';
 import util from 'util';
 
@@ -107,39 +108,23 @@ async function annotatePackage(packageName, filePath, lineNumber, ecosystem) {
     }
 }
 
-async function processLines(filePath, modifiedLineNumbers, ecosystem) {
-    try {
-        // Read all lines from the file
-        const allLines = (await fs.readFile(filePath, 'utf-8')).split('\n');
+async function processLines(filePath, lines, ecosystem) {
+    for (let index = 1; index <= lines.length; index++) {
+        const line = lines[index - 1];
+        if (!line.trim()) continue;
 
-        // Iterate over the modified line numbers, and fetch corresponding lines
-        for (const lineNumber of modifiedLineNumbers) {
-            // Get the line content using the line number (adjust for zero-index)
-            const line = allLines[lineNumber - 1];
-
-            // Ensure line is a string before calling trim()
-            if (typeof line !== 'string') {
-                core.warning(`Skipping non-string line at line number ${lineNumber}: ${JSON.stringify(line)}`);
-                continue;
-            }
-
-            if (!line.trim()) continue;
-
-            const packageName = processPackageLine(line);
-            if (packageName) {
-                if (!isValidPackageName(packageName)) {
-                    core.error(`Invalid package name: ${packageName}`, {
-                        file: filePath,
-                        startLine: lineNumber,
-                        endLine: lineNumber
-                    });
-                } else {
-                    await annotatePackage(packageName, filePath, lineNumber, ecosystem);
-                }
+        const packageName = processPackageLine(line);
+        if (packageName) {
+            if (!isValidPackageName(packageName)) {
+                core.error(`Invalid package name: ${packageName}`, {
+                    file: filePath,
+                    startLine: index,
+                    endLine: index
+                });
+            } else {
+                await annotatePackage(packageName, filePath, index, ecosystem);
             }
         }
-    } catch (error) {
-        core.setFailed(`Failed to process lines in ${filePath}: ${error.message}`);
     }
 }
 
@@ -212,11 +197,19 @@ async function processCondaEnvironment(filePath) {
 }
 
 // Fetch modified lines in the PR
-async function getModifiedLinesFromCommitDiff(filePath) {
+async function getModifiedLines(filePath) {
+    const { context } = github;
+    const baseRef = context.payload.pull_request.base.ref;
+    const headRef = context.payload.pull_request.head.ref;
+
     try {
-        const { stdout, stderr } = await execPromise(`git diff HEAD^ HEAD -- ${filePath}`);
+        // Fetch the base branch to ensure we have the latest state of baseRef locally
+        await execPromise(`git fetch origin ${baseRef}`);
+
+        // Get the diff between the base branch and the current branch without checking out baseRef
+        const { stdout, stderr } = await execPromise(`git diff origin/${baseRef} ${headRef} -- ${filePath}`);
         if (stderr) {
-            throw new Error(`Error fetching commit diff: ${stderr}`);
+            throw new Error(`Error fetching diff: ${stderr}`);
         }
 
         const patchLines = stdout.split('\n');
@@ -224,17 +217,17 @@ async function getModifiedLinesFromCommitDiff(filePath) {
 
         let lineNumber = 0;
 
-        // Parse the diff to find the modified lines (based on Git diff format)
+        // Parse the diff to find the modified lines
         for (const line of patchLines) {
             if (line.startsWith('@@')) {
                 const match = /@@ -\d+,\d+ \+(\d+),/.exec(line);
                 lineNumber = match ? parseInt(match[1], 10) : lineNumber;
             } else if (line.startsWith('+') && !line.startsWith('+++')) {
-                // Track the modified line numbers
+                // Add the current line number if it's an addition
                 modifiedLines.push(lineNumber);
                 lineNumber++;
             } else if (!line.startsWith('-')) {
-                // Increment the line number for non-removed lines
+                // If it's a context line (not removed), increment the line number
                 lineNumber++;
             }
         }
@@ -253,8 +246,7 @@ async function run() {
 
     if (ecosystem === 'pip') {
         if (annotateModifiedOnly) {
-
-            modifiedLines = await getModifiedLinesFromCommitDiff('requirements.txt');
+            modifiedLines = await getModifiedLines('requirements.txt');
         }
         if (modifiedLines.length > 0) {
             await processLines('requirements.txt', modifiedLines, 'pip');
@@ -263,7 +255,7 @@ async function run() {
         }
     } else if (ecosystem === 'conda') {
         if (annotateModifiedOnly) {
-            modifiedLines = await getModifiedLinesFromCommitDiff('environment.yml');
+            modifiedLines = await getModifiedLines('environment.yml');
         }
         if (modifiedLines.length > 0) {
             await processLines('environment.yml', modifiedLines, 'conda');

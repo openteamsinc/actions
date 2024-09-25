@@ -108,23 +108,39 @@ async function annotatePackage(packageName, filePath, lineNumber, ecosystem) {
     }
 }
 
-async function processLines(filePath, lines, ecosystem) {
-    for (let index = 1; index <= lines.length; index++) {
-        const line = lines[index - 1];
-        if (!line.trim()) continue;
+async function processLines(filePath, modifiedLineNumbers, ecosystem) {
+    try {
+        // Read all lines from the file
+        const allLines = (await fs.readFile(filePath, 'utf-8')).split('\n');
 
-        const packageName = processPackageLine(line);
-        if (packageName) {
-            if (!isValidPackageName(packageName)) {
-                core.error(`Invalid package name: ${packageName}`, {
-                    file: filePath,
-                    startLine: index,
-                    endLine: index
-                });
-            } else {
-                await annotatePackage(packageName, filePath, index, ecosystem);
+        // Iterate over the modified line numbers, and fetch corresponding lines
+        for (const lineNumber of modifiedLineNumbers) {
+            // Get the line content using the line number (adjust for zero-index)
+            const line = allLines[lineNumber - 1];
+
+            // Ensure line is a string before calling trim()
+            if (typeof line !== 'string') {
+                core.warning(`Skipping non-string line at line number ${lineNumber}: ${JSON.stringify(line)}`);
+                continue;
+            }
+
+            if (!line.trim()) continue;
+
+            const packageName = processPackageLine(line);
+            if (packageName) {
+                if (!isValidPackageName(packageName)) {
+                    core.error(`Invalid package name: ${packageName}`, {
+                        file: filePath,
+                        startLine: lineNumber,
+                        endLine: lineNumber
+                    });
+                } else {
+                    await annotatePackage(packageName, filePath, lineNumber, ecosystem);
+                }
             }
         }
+    } catch (error) {
+        core.setFailed(`Failed to process lines in ${filePath}: ${error.message}`);
     }
 }
 
@@ -200,7 +216,7 @@ async function processCondaEnvironment(filePath) {
 async function getModifiedLines(filePath) {
     const { context } = github;
     const baseRef = context.payload.pull_request.base.ref;
-    
+
     try {
         // Fetch the base branch to ensure we have the latest state of baseRef locally
         await execPromise(`git fetch origin ${baseRef}`);

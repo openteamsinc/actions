@@ -30640,20 +30640,67 @@ var __webpack_exports__ = {};
 const promises_namespaceObject = require("fs/promises");
 // EXTERNAL MODULE: ./node_modules/@actions/core/lib/core.js
 var core = __webpack_require__(6977);
-// EXTERNAL MODULE: ./node_modules/@actions/github/lib/github.js
-var github = __webpack_require__(2453);
+var core_default = /*#__PURE__*/__webpack_require__.n(core);
 ;// CONCATENATED MODULE: external "child_process"
 const external_child_process_namespaceObject = require("child_process");
 // EXTERNAL MODULE: external "util"
 var external_util_ = __webpack_require__(9023);
+var external_util_default = /*#__PURE__*/__webpack_require__.n(external_util_);
+// EXTERNAL MODULE: ./node_modules/@actions/github/lib/github.js
+var github = __webpack_require__(2453);
+var github_default = /*#__PURE__*/__webpack_require__.n(github);
+;// CONCATENATED MODULE: ./src/utils/diffUtils.js
+
+
+
+
+
+const execPromise = external_util_default().promisify(external_child_process_namespaceObject.exec);
+
+async function getModifiedLines(filePath) {
+    const { context } = (github_default());
+    const baseRef = context.payload.pull_request?.base?.ref;
+
+    if (!baseRef) {
+        core_default().setFailed("Error: Base branch (baseRef) is missing. Please ensure the pull request is targeting a valid base branch.");
+        return [];
+    }
+
+    try {
+        await execPromise(`git fetch origin ${baseRef}`);
+        const { stdout, stderr } = await execPromise(`git diff origin/${baseRef} HEAD -- ${filePath}`);
+        if (stderr) {
+            throw new Error(`Error fetching diff: ${stderr}`);
+        }
+
+        const patchLines = stdout.split('\n');
+        const modifiedLines = [];
+        let lineNumber = 0;
+
+        for (const line of patchLines) {
+            if (line.startsWith('@@')) {
+                const match = /@@ -\d+,\d+ \+(\d+),/.exec(line);
+                lineNumber = match ? parseInt(match[1], 10) : lineNumber;
+            } else if (line.startsWith('+') && !line.startsWith('+++')) {
+                modifiedLines.push(lineNumber);
+                lineNumber++;
+            } else if (!line.startsWith('-')) {
+                lineNumber++;
+            }
+        }
+
+        return modifiedLines;
+    } catch (error) {
+        core_default().setFailed(`Error getting modified lines from commit diff: ${error.message}`);
+        return [];
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/index.mjs
 
 
 
 
-
-
-const execPromise = external_util_.promisify(external_child_process_namespaceObject.exec);
 
 function isValidPackageName(packageName) {
     const packageNamePattern = /^[a-zA-Z0-9._-]+$/;
@@ -30793,147 +30840,25 @@ async function processLines(filePath, modifiedLineNumbers, ecosystem) {
     }
 }
 
-async function processPipRequirements(filePath) {
-    try {
-        const lines = (await promises_namespaceObject.readFile(filePath, 'utf-8')).split('\n');
-        await processLines(filePath, lines, 'pip');
-    } catch (error) {
-        core.setFailed(`Failed to read ${filePath}: ${error.message}`);
-    }
-}
-
-async function* getDependenciesWithLineNumbers(filePath) {
-    const fileContent = await promises_namespaceObject.readFile(filePath, 'utf8');
-    const lines = fileContent.split('\n');
-
-    let inDependencies = false;
-    let inPipDependencies = false;
-    let lineNumber = 0;
-
-    for (const line of lines) {
-        lineNumber++;
-        if (line.trim() === 'dependencies:') {
-            inDependencies = true;
-            continue;
-        }
-        if (inDependencies && line.trim() === '- pip:') {
-            inPipDependencies = true;
-            continue;
-        }
-
-        // Handle flow-style dependencies, e.g., "dependencies: [dep_a, dep_b]"
-        if (inDependencies && line.trim().startsWith('- [')) {
-            const dependencies = line
-                .substring(line.indexOf('[') + 1, line.indexOf(']'))
-                .split(',')
-                .map(dep => dep.trim());
-
-            for (const dependency of dependencies) {
-                if (dependency) {
-                    yield { dependency, lineNumber, ecosystem: 'conda' };
-                }
-            }
-        }
-
-        if (inDependencies && line.trim().startsWith('-') && !inPipDependencies && !line.trim().startsWith('- [')) {
-            const dependency = line.trim().substring(2);
-            yield { dependency, lineNumber, ecosystem: 'conda' };
-        } else if (inPipDependencies && line.trim().startsWith('-')) {
-            const dependency = line.trim().substring(2);
-            yield { dependency, lineNumber, ecosystem: 'pip' };
-        } else if (inPipDependencies && !line.trim().startsWith('-')) {
-            inPipDependencies = false;
-        }
-    }
-}
-
-async function processCondaEnvironment(filePath) {
-    try {
-        for await (const dep of getDependenciesWithLineNumbers(filePath)) {
-            const { dependency, lineNumber, ecosystem } = dep;
-            const packageName = stripVersion(dependency);
-            if (packageName && isValidPackageName(packageName)) {
-                await annotatePackage(packageName, filePath, lineNumber, ecosystem);
-            }
-        }
-    } catch (error) {
-        core.setFailed(`Failed to read ${filePath}: ${error.message}`);
-    }
-}
-
-// Fetch modified lines in the PR
-async function getModifiedLines(filePath) {
-    const { context } = github;
-    const baseRef = context.payload.pull_request?.base?.ref;
-
-    if (!baseRef) {
-        core.setFailed("Error: Base branch (baseRef) is missing. Please ensure the pull request is targeting a valid base branch.");
-        return [];
-    }
-
-    try {
-        // Fetch the base branch to ensure we have the latest state of baseRef locally
-        await execPromise(`git fetch origin ${baseRef}`);
-
-        // Get the diff between the base branch and the current branch (HEAD)
-        const { stdout, stderr } = await execPromise(`git diff origin/${baseRef} HEAD -- ${filePath}`);
-        if (stderr) {
-            throw new Error(`Error fetching diff: ${stderr}`);
-        }
-
-        const patchLines = stdout.split('\n');
-        const modifiedLines = [];
-
-        let lineNumber = 0;
-
-        // Parse the diff to find the modified lines
-        for (const line of patchLines) {
-            if (line.startsWith('@@')) {
-                const match = /@@ -\d+,\d+ \+(\d+),/.exec(line);
-                lineNumber = match ? parseInt(match[1], 10) : lineNumber;
-            } else if (line.startsWith('+') && !line.startsWith('+++')) {
-                // Add the current line number if it's an addition
-                modifiedLines.push(lineNumber);
-                lineNumber++;
-            } else if (!line.startsWith('-')) {
-                // If it's a context line (not removed), increment the line number
-                lineNumber++;
-            }
-        }
-
-        return modifiedLines;
-    } catch (error) {
-        core.setFailed(`Error getting modified lines from commit diff: ${error.message}`);
-        return [];
-    }
-}
-
 async function run() {
     const ecosystem = core.getInput('package-ecosystem', { required: true });
     const annotateModifiedOnly = core.getInput('annotate-modified-only') === 'true';
+    const filePath = ecosystem === 'pip' ? 'requirements.txt' : 'environment.yml';
     let modifiedLines = [];
 
-    if (ecosystem === 'pip') {
-        if (annotateModifiedOnly) {
-            modifiedLines = await getModifiedLines('requirements.txt');
-        }
-        if (modifiedLines.length > 0) {
-            await processLines('requirements.txt', modifiedLines, 'pip');
-        } else {
-            await processPipRequirements('requirements.txt');
-        }
-    } else if (ecosystem === 'conda') {
-        if (annotateModifiedOnly) {
-            modifiedLines = await getModifiedLines('environment.yml');
-        }
-        if (modifiedLines.length > 0) {
-            await processLines('environment.yml', modifiedLines, 'conda');
-        } else {
-            await processCondaEnvironment('environment.yml');
-        }
-    } else {
-        core.setFailed(`Unsupported package ecosystem: ${ecosystem}`);
+    // Get modified lines if 'annotate-modified-only' is true, otherwise get all lines
+    if (annotateModifiedOnly) {
+        modifiedLines = await getModifiedLines(filePath);
     }
+
+    // If no modified lines were found or not using 'annotate-modified-only', include all lines
+    if (modifiedLines.length === 0) {
+        const fileContents = await promises_namespaceObject.readFile(filePath, 'utf-8');
+        const totalLines = fileContents.split('\n').length;
+        modifiedLines = Array.from({ length: totalLines }, (_, i) => i + 1);
+    }
+
+    await processLines(filePath, modifiedLines, ecosystem);
 }
 
 run();

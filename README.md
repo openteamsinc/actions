@@ -54,6 +54,9 @@ The health risk of a package is represented by the following possible values:
 ### `annotate-modified-only`
 **Optional**: If set to `"true"`, the action will only annotate the lines that were modified in the pull request. If not set or `false`, the action will annotate all packages in the file. Default is `false`.
 
+> **Warning**: This option only works when the action is triggered by a **pull request** event.  
+If used with any other trigger (such as `push`), the action will fail and no annotations will be made.
+
 ## Outputs
 
 None.
@@ -73,21 +76,16 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '20.x'
-      
       - name: Run the Annotate Requirements Action for pip
         uses: openteamsinc/score@v1
         with:
           package-ecosystem: 'pip'
           requirements-path: 'requirements.txt'
-          annotate-modified-only: 'true'
+          annotate-modified-only: true
       
       - name: Run the Annotate Requirements Action for conda
         uses: openteamsinc/score@v1
         with:
           package-ecosystem: 'conda'
           requirements-path: 'environment.yml'
-          annotate-modified-only: 'false'
+          annotate-modified-only: false

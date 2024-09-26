@@ -30864,13 +30864,18 @@ async function processCondaEnvironment(filePath) {
 // Fetch modified lines in the PR
 async function getModifiedLines(filePath) {
     const { context } = github;
-    const baseRef = context.payload.pull_request.base.ref;
+    const baseRef = context.payload.pull_request?.base?.ref;
+
+    if (!baseRef) {
+        core.setFailed("Error: Base branch (baseRef) is missing. Please ensure the pull request is targeting a valid base branch.");
+        return [];
+    }
 
     try {
         // Fetch the base branch to ensure we have the latest state of baseRef locally
         await execPromise(`git fetch origin ${baseRef}`);
 
-        // Get the diff between the base branch and the current
+        // Get the diff between the base branch and the current branch (HEAD)
         const { stdout, stderr } = await execPromise(`git diff origin/${baseRef} HEAD -- ${filePath}`);
         if (stderr) {
             throw new Error(`Error fetching diff: ${stderr}`);

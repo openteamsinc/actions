@@ -30648,7 +30648,6 @@ var external_util_ = __webpack_require__(9023);
 var external_util_default = /*#__PURE__*/__webpack_require__.n(external_util_);
 // EXTERNAL MODULE: ./node_modules/@actions/github/lib/github.js
 var github = __webpack_require__(2453);
-var github_default = /*#__PURE__*/__webpack_require__.n(github);
 ;// CONCATENATED MODULE: ./src/utils/diffUtils.js
 
 
@@ -30658,8 +30657,7 @@ var github_default = /*#__PURE__*/__webpack_require__.n(github);
 const execPromise = external_util_default().promisify(external_child_process_namespaceObject.exec);
 
 async function getModifiedLines(filePath) {
-    const { context } = (github_default());
-    const baseRef = context.payload.pull_request?.base?.ref;
+    const baseRef = github.context.payload.pull_request?.base?.ref;
 
     if (!baseRef) {
         core_default().setFailed("Error: Base branch (baseRef) is missing. Please ensure the pull request is targeting a valid base branch.");

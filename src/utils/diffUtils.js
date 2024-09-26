@@ -1,12 +1,11 @@
 import { exec } from 'child_process';
 import util from 'util';
 import core from '@actions/core';
-import github from '@actions/github';
+import { context } from '@actions/github';
 
 const execPromise = util.promisify(exec);
 
 export async function getModifiedLines(filePath) {
-    const { context } = github;
     const baseRef = context.payload.pull_request?.base?.ref;
 
     if (!baseRef) {

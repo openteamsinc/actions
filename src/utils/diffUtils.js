@@ -9,9 +9,9 @@ export async function getModifiedLines(filePath) {
     const baseRef = context.payload.pull_request?.base?.ref;
 
     if (!baseRef) {
-        core.setFailed("Error: Base branch (baseRef) is missing. Please ensure the pull request is targeting a valid base branch.");
+        core.setFailed("Error: Unable to determine the base branch (baseRef). Please ensure this workflow is triggered by a pull request event.");
         return [];
-    }
+    }    
 
     try {
         await execPromise(`git fetch origin ${baseRef}`);
@@ -24,7 +24,7 @@ export async function getModifiedLines(filePath) {
         const modifiedLines = [];
         let lineNumber = 0;
 
-        for (const line of patchLines) {
+        for (const line of patchLines) { 
             if (line.startsWith('@@')) {
                 const match = /@@ -\d+,\d+ \+(\d+),/.exec(line);
                 lineNumber = match ? parseInt(match[1], 10) : lineNumber;

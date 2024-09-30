@@ -1,6 +1,8 @@
 import fs from "fs/promises";
 import core from "@actions/core";
 
+import { getModifiedLines } from './utils/diffUtils.js';
+
 function isValidPackageName(packageName) {
     const packageNamePattern = /^[a-zA-Z0-9._-]+$/;
     return packageNamePattern.test(packageName);
@@ -16,6 +18,7 @@ function processPackageLine(line) {
     return stripVersion(cleanLine);
 }
 
+// Fetch package information from the Score API for both pip and conda
 async function fetchPackageScore(packageName, ecosystem) {
     let url;
     if (ecosystem === 'pip') {
@@ -102,104 +105,61 @@ async function annotatePackage(packageName, filePath, lineNumber, ecosystem) {
     }
 }
 
-async function processLines(filePath, lines, ecosystem) {
-    for (let index = 1; index <= lines.length; index++) {
-        const line = lines[index - 1];
-        if (!line.trim()) continue;
-
-        const packageName = processPackageLine(line);
-        if (packageName) {
-            if (!isValidPackageName(packageName)) {
-                core.error(`Invalid package name: ${packageName}`, {
-                    file: filePath,
-                    startLine: index,
-                    endLine: index
-                });
-            } else {
-                await annotatePackage(packageName, filePath, index, ecosystem);
-            }
-        }
-    }
-}
-
-async function processPipRequirements(filePath) {
+async function processLines(filePath, modifiedLineNumbers, ecosystem) {
     try {
-        const lines = (await fs.readFile(filePath, 'utf-8')).split('\n');
-        await processLines(filePath, lines, 'pip');
-    } catch (error) {
-        core.setFailed(`Failed to read ${filePath}: ${error.message}`);
-    }
-}
+        // Read all lines from the file
+        const allLines = (await fs.readFile(filePath, 'utf-8')).split('\n');
 
-async function* getDependenciesWithLineNumbers(filePath) {
-    const fileContent = await fs.readFile(filePath, 'utf8');
-    const lines = fileContent.split('\n');
+        // Iterate over the modified line numbers, and fetch corresponding lines
+        for (const lineNumber of modifiedLineNumbers) {
+            // Get the line content using the line number (adjust for zero-index)
+            const line = allLines[lineNumber - 1];
 
-    let inDependencies = false;
-    let inPipDependencies = false;
-    let lineNumber = 0;
+            // Ensure line is a string before calling trim()
+            if (typeof line !== 'string') {
+                core.warning(`Skipping non-string line at line number ${lineNumber}: ${JSON.stringify(line)}`);
+                continue;
+            }
 
-    for (const line of lines) {
-        lineNumber++;
-        if (line.trim() === 'dependencies:') {
-            inDependencies = true;
-            continue;
-        }
-        if (inDependencies && line.trim() === '- pip:') {
-            inPipDependencies = true;
-            continue;
-        }
+            if (!line.trim()) continue;
 
-        // Handle flow-style dependencies, e.g., "dependencies: [dep_a, dep_b]"
-        if (inDependencies && line.trim().startsWith('- [')) {
-            const dependencies = line
-                .substring(line.indexOf('[') + 1, line.indexOf(']'))
-                .split(',')
-                .map(dep => dep.trim());
-
-            for (const dependency of dependencies) {
-                if (dependency) {
-                    yield { dependency, lineNumber, ecosystem: 'conda' };
+            const packageName = processPackageLine(line);
+            if (packageName) {
+                if (!isValidPackageName(packageName)) {
+                    core.error(`Invalid package name: ${packageName}`, {
+                        file: filePath,
+                        startLine: lineNumber,
+                        endLine: lineNumber
+                    });
+                } else {
+                    await annotatePackage(packageName, filePath, lineNumber, ecosystem);
                 }
             }
         }
-
-        if (inDependencies && line.trim().startsWith('-') && !inPipDependencies && !line.trim().startsWith('- [')) {
-            const dependency = line.trim().substring(2);
-            yield { dependency, lineNumber, ecosystem: 'conda' };
-        } else if (inPipDependencies && line.trim().startsWith('-')) {
-            const dependency = line.trim().substring(2);
-            yield { dependency, lineNumber, ecosystem: 'pip' };
-        } else if (inPipDependencies && !line.trim().startsWith('-')) {
-            inPipDependencies = false;
-        }
-    }
-}
-
-async function processCondaEnvironment(filePath) {
-    try {
-        for await (const dep of getDependenciesWithLineNumbers(filePath)) {
-            const { dependency, lineNumber, ecosystem } = dep;
-            const packageName = stripVersion(dependency);
-            if (packageName && isValidPackageName(packageName)) {
-                await annotatePackage(packageName, filePath, lineNumber, ecosystem);
-            }
-        }
     } catch (error) {
-        core.setFailed(`Failed to read ${filePath}: ${error.message}`);
+        core.setFailed(`Failed to process lines in ${filePath}: ${error.message}`);
     }
 }
 
 async function run() {
     const ecosystem = core.getInput('package-ecosystem', { required: true });
+    const annotateModifiedOnly = core.getInput('annotate-modified-only') === 'true';
+    const filePath = ecosystem === 'pip' ? 'requirements.txt' : 'environment.yml';
+    let modifiedLines = [];
 
-    if (ecosystem === 'pip') {
-        await processPipRequirements('requirements.txt');
-    } else if (ecosystem === 'conda') {
-        await processCondaEnvironment('environment.yml');
-    } else {
-        core.setFailed(`Unsupported package ecosystem: ${ecosystem}`);
+    // Get modified lines if 'annotate-modified-only' is true, otherwise get all lines
+    if (annotateModifiedOnly) {
+        modifiedLines = await getModifiedLines(filePath);
     }
+
+    // If no modified lines were found or not using 'annotate-modified-only', include all lines
+    if (modifiedLines.length === 0) {
+        const fileContents = await fs.readFile(filePath, 'utf-8');
+        const totalLines = fileContents.split('\n').length;
+        modifiedLines = Array.from({ length: totalLines }, (_, i) => i + 1);
+    }
+
+    await processLines(filePath, modifiedLines, ecosystem);
 }
 
 run();

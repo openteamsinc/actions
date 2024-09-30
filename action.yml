@@ -7,6 +7,10 @@ inputs:
   package-ecosystem:
     description: "The package manager ecosystem to annotate. Currently supports 'pip' and 'conda'."
     required: true
+  annotate-diff-only:
+    description: "Set to true to annotate only modified lines in a PR."
+    required: false
+    default: "false"
   requirements-path:
     description: "Path to the requirements.txt file to annotate."
     required: false

@@ -17,8 +17,8 @@
   },
   "license": "ISC",
   "dependencies": {
-    "@actions/core": "^1.11.1",
-    "@actions/github": "^6.0.0",
+    "@actions/core": "^2.0.2",
+    "@actions/github": "^7.0.0",
     "js-yaml": "^4.1.0",
     "toml": "^3.0.0"
   },
